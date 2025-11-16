@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  api:
+    build: .
+    ports:
+      - "9876:9876"
+    restart: always
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
