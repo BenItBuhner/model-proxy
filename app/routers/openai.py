@@ -795,7 +795,6 @@ async def chat_completions(
             "internal_server_error"
         )
 
-
 @router.post("/v1/chat/completions-stream")
 async def chat_completions_stream(
     request: ChatCompletionRequest,
@@ -1084,8 +1083,6 @@ async def chat_completions_stream(
             status_code=500,
             detail=f"Error processing streaming request: {str(e)}"
         )
-
-
 @router.post("/v1/chat/completions-stream", response_model=ChatCompletionResponse)
 async def chat_completions(
     request: ChatCompletionRequest,
@@ -1233,3 +1230,6 @@ async def chat_completions_stream(
             status_code=500,
             detail=f"Error processing streaming request: {str(e)}"
         )
+
+
+

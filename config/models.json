@@ -12,6 +12,11 @@
     "provider_model": "glm-4.6-turbo"
   },
 
+  "nahcrof/glm-4.5": {
+    "provider": "nahcrof",
+    "provider_model": "glm-4.5"
+  },
+
   "groq/kimi-k2": {
     "provider": "groq",
     "provider_model": "moonshotai/kimi-k2-instruct-0905"
@@ -47,6 +52,10 @@
     "provider": "nahcrof",
     "provider_model": "qwen3-coder-turbo"
   },
+  "nahcrof/qwen3-coder-free": {
+    "provider": "nahcrof",
+    "provider_model": "qwen3-coder:free"
+  },
 
   "nahcrof/gpt-oss-120b": {
     "provider": "nahcrof",
@@ -69,6 +78,11 @@
   "longcat/longcat-flash": {
     "provider": "longcat",
     "provider_model": "LongCat-Flash-Chat"
+  },
+
+  "gemini/gemini-3-pro": {
+    "provider": "gemini",
+    "provider_model": "gemini-3-pro-preview"
   },
 
   "gemini/gemini-2.5-pro": {
