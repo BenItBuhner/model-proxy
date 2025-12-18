@@ -7,14 +7,14 @@
       "wire_protocol": "openai",
       "provider": "nahcrof",
       "model": "qwen3-coder",
-      "api_key_env": ["NAHCROF_API_KEY", "NAHCROF_API_KEY_BACKUP"]
+      "api_key_env": ["NAHCROF_API_KEY"]
     },
     {
       "id": "secondary",
       "wire_protocol": "openai",
       "provider": "nahcrof",
       "model": "qwen3-coder-turbo",
-      "api_key_env": ["NAHCROF_API_KEY", "NAHCROF_API_KEY_BACKUP"]
+      "api_key_env": ["NAHCROF_API_KEY"]
     }
   ],
   "fallback_model_routings": []

@@ -2,14 +2,21 @@
 OpenAI provider implementation.
 Handles OpenAI API calls with key rotation and error handling.
 Uses provider configuration for endpoints, authentication, and settings.
+Enhanced with route configuration support for fallback routing.
 """
-import httpx
+
 import json
 import time
-from typing import Dict, Any, List, AsyncGenerator, Optional
-from app.providers.base import BaseProvider
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
+import httpx
+
 from app.core.api_key_manager import get_available_keys
-from app.core.provider_config import get_provider_config, get_provider_endpoint, get_provider_auth_headers
+from app.core.provider_config import (
+    get_provider_auth_headers,
+    get_provider_config,
+)
+from app.providers.base import BaseProvider
 
 
 class OpenAIProvider(BaseProvider):
@@ -20,29 +27,46 @@ class OpenAIProvider(BaseProvider):
         self.config = get_provider_config(provider_name)
         if not self.config:
             raise ValueError(f"{provider_name} provider config not found")
-        
+
         # Get base URL and endpoint from config
-        self.base_url = self.config["endpoints"]["base_url"]
+        self._default_base_url = self.config["endpoints"]["base_url"]
         # Check for proxy override
         if self.config.get("proxy_support", {}).get("enabled", False):
             override_url = self.config["proxy_support"].get("base_url_override")
             if override_url:
-                self.base_url = override_url
-        
+                self._default_base_url = override_url
+
         self.completions_endpoint = self.config["endpoints"]["completions"]
         self.timeout = self.config.get("request_config", {}).get("timeout_seconds", 60)
-    
+
+    @property
+    def base_url(self) -> str:
+        """Get the effective base URL (route-specific or default)."""
+        return self._get_effective_base_url(self._default_base_url)
+
     def _get_endpoint_url(self) -> str:
         """Get the full endpoint URL."""
         endpoint_path = self.completions_endpoint
         if endpoint_path.startswith("/"):
             endpoint_path = endpoint_path[1:]
-        
-        if self.base_url.endswith("/"):
-            return f"{self.base_url}{endpoint_path}"
+
+        base = self.base_url
+        if base.endswith("/"):
+            return f"{base}{endpoint_path}"
         else:
-            return f"{self.base_url}/{endpoint_path}"
-    
+            return f"{base}/{endpoint_path}"
+
+    def _get_available_api_keys(self) -> List[str]:
+        """
+        Get list of API keys to try.
+
+        If route-specific API key is set, return only that key.
+        Otherwise, return all available keys from environment.
+        """
+        if self._route_api_key:
+            return [self._route_api_key]
+        return get_available_keys(self.provider_name)
+
     async def call(
         self,
         model: str,
@@ -59,35 +83,35 @@ class OpenAIProvider(BaseProvider):
         user: Optional[str] = None,
         tools: Optional[List[Dict]] = None,
         tool_choice: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Make a synchronous API call to OpenAI.
-        
+
         Args:
             model: Model name
             messages: List of message dicts
             **kwargs: Additional OpenAI parameters
-            
+
         Returns:
             OpenAI API response
-            
+
         Raises:
             Exception: If all API keys fail
         """
-        available_keys = get_available_keys(self.provider_name)
+        available_keys = self._get_available_api_keys()
         if not available_keys:
             raise Exception(f"No {self.provider_name} API keys available")
-        
+
         last_error = None
         retry_count = 0
-        
+
         # Try each available key until one succeeds
         for api_key in available_keys:
             try:
                 endpoint_url = self._get_endpoint_url()
                 auth_headers = get_provider_auth_headers(self.provider_name, api_key)
-                
+
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     payload = {
                         "model": model,
@@ -97,7 +121,7 @@ class OpenAIProvider(BaseProvider):
                         "n": n,
                         "stream": stream,
                     }
-                    
+
                     if stop is not None:
                         payload["stop"] = stop
                     if max_tokens is not None:
@@ -114,7 +138,7 @@ class OpenAIProvider(BaseProvider):
                         payload["tools"] = tools
                     if tool_choice is not None:
                         payload["tool_choice"] = tool_choice
-                    
+
                     headers = {
                         **auth_headers,
                         "Content-Type": "application/json",
@@ -122,25 +146,26 @@ class OpenAIProvider(BaseProvider):
                         "Connection": "keep-alive",
                         "Cache-Control": "no-cache",
                     }
-                    
+
                     response = await client.post(
-                        endpoint_url,
-                        headers=headers,
-                        json=payload
+                        endpoint_url, headers=headers, json=payload
                     )
-                    
+
                     # Check for errors
                     if response.status_code >= 400:
                         # Mark key as failed and try next one
                         self._mark_key_failed(api_key)
                         retry_count += 1
-                        last_error = Exception(
+                        error_msg = (
                             f"OpenAI API error {response.status_code}: {response.text}"
                         )
+                        last_error = Exception(error_msg)
+                        # Attach status code for fallback decision
+                        last_error.status = response.status_code
                         continue
-                    
+
                     return response.json()
-                    
+
             except httpx.TimeoutException as e:
                 self._mark_key_failed(api_key)
                 retry_count += 1
@@ -151,10 +176,10 @@ class OpenAIProvider(BaseProvider):
                 retry_count += 1
                 last_error = e
                 continue
-        
+
         # All keys failed
         raise last_error or Exception("All OpenAI API keys failed")
-    
+
     async def call_stream(
         self,
         model: str,
@@ -170,35 +195,35 @@ class OpenAIProvider(BaseProvider):
         user: Optional[str] = None,
         tools: Optional[List[Dict]] = None,
         tool_choice: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> AsyncGenerator[str, None]:
         """
         Make a streaming API call to OpenAI.
-        
+
         Args:
             model: Model name
             messages: List of message dicts
             **kwargs: Additional OpenAI parameters
-            
+
         Yields:
             SSE formatted chunks
-            
+
         Raises:
             Exception: If all API keys fail
         """
-        available_keys = get_available_keys(self.provider_name)
+        available_keys = self._get_available_api_keys()
         if not available_keys:
             raise Exception(f"No {self.provider_name} API keys available")
-        
+
         last_error = None
         retry_count = 0
-        
+
         # Try each available key until one succeeds
         for api_key in available_keys:
             try:
                 endpoint_url = self._get_endpoint_url()
                 auth_headers = get_provider_auth_headers(self.provider_name, api_key)
-                
+
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     payload = {
                         "model": model,
@@ -208,7 +233,7 @@ class OpenAIProvider(BaseProvider):
                         "n": n,
                         "stream": True,
                     }
-                    
+
                     if stop is not None:
                         payload["stop"] = stop
                     if max_tokens is not None:
@@ -225,7 +250,7 @@ class OpenAIProvider(BaseProvider):
                         payload["tools"] = tools
                     if tool_choice is not None:
                         payload["tool_choice"] = tool_choice
-                    
+
                     headers = {
                         **auth_headers,
                         "Content-Type": "application/json",
@@ -233,29 +258,32 @@ class OpenAIProvider(BaseProvider):
                         "Connection": "keep-alive",
                         "Cache-Control": "no-cache",
                     }
-                    
+
                     try:
                         async with client.stream(
-                            "POST",
-                            endpoint_url,
-                            headers=headers,
-                            json=payload
+                            "POST", endpoint_url, headers=headers, json=payload
                         ) as response:
                             if response.status_code >= 400:
                                 error_text = await response.aread()
                                 self._mark_key_failed(api_key)
                                 retry_count += 1
-                                last_error = Exception(
-                                    f"OpenAI API error {response.status_code}: {error_text.decode()}"
-                                )
+                                error_msg = f"OpenAI API error {response.status_code}: {error_text.decode()}"
+                                last_error = Exception(error_msg)
+                                last_error.status = response.status_code
                                 continue
 
                             # If upstream didn't return SSE, fall back by emitting a single chunk
-                            content_type = (response.headers.get("content-type") or "").lower()
+                            content_type = (
+                                response.headers.get("content-type") or ""
+                            ).lower()
                             if "text/event-stream" not in content_type:
                                 body = await response.aread()
                                 try:
-                                    data = json.loads(body.decode() if isinstance(body, (bytes, bytearray)) else str(body))
+                                    data = json.loads(
+                                        body.decode()
+                                        if isinstance(body, (bytes, bytearray))
+                                        else str(body)
+                                    )
                                 except Exception:
                                     data = {}
                                 # Extract content
@@ -267,16 +295,20 @@ class OpenAIProvider(BaseProvider):
                                         content = msg.get("content") or ""
                                 except Exception:
                                     content = ""
-                                import time as _t
                                 chunk = {
-                                    "id": f"chatcmpl-{int(_t.time())}",
+                                    "id": f"chatcmpl-{int(time.time())}",
                                     "object": "chat.completion.chunk",
-                                    "created": int(_t.time()),
+                                    "created": int(time.time()),
                                     "model": model,
-                                    "choices": [{
-                                        "index": 0,
-                                        "delta": {"role": "assistant", "content": content},
-                                    }]
+                                    "choices": [
+                                        {
+                                            "index": 0,
+                                            "delta": {
+                                                "role": "assistant",
+                                                "content": content,
+                                            },
+                                        }
+                                    ],
                                 }
                                 yield f"data: {json.dumps(chunk)}\n\n"
                                 yield "data: [DONE]\n\n"
@@ -293,17 +325,15 @@ class OpenAIProvider(BaseProvider):
                             fallback_payload = dict(payload)
                             fallback_payload["stream"] = False
                             resp = await client.post(
-                                endpoint_url,
-                                headers=headers,
-                                json=fallback_payload
+                                endpoint_url, headers=headers, json=fallback_payload
                             )
                             if resp.status_code >= 400:
                                 error_text = await resp.aread()
                                 self._mark_key_failed(api_key)
                                 retry_count += 1
-                                last_error = Exception(
-                                    f"OpenAI API error {resp.status_code}: {error_text.decode()}"
-                                )
+                                error_msg = f"OpenAI API error {resp.status_code}: {error_text.decode()}"
+                                last_error = Exception(error_msg)
+                                last_error.status = resp.status_code
                                 continue
                             data = resp.json()
                             # Extract content safely
@@ -316,16 +346,20 @@ class OpenAIProvider(BaseProvider):
                             except Exception:
                                 content = ""
                             # Emit one chunk and DONE
-                            import time as _t
                             chunk = {
-                                "id": f"chatcmpl-{int(_t.time())}",
+                                "id": f"chatcmpl-{int(time.time())}",
                                 "object": "chat.completion.chunk",
-                                "created": int(_t.time()),
+                                "created": int(time.time()),
                                 "model": model,
-                                "choices": [{
-                                    "index": 0,
-                                    "delta": {"role": "assistant", "content": content},
-                                }]
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {
+                                            "role": "assistant",
+                                            "content": content,
+                                        },
+                                    }
+                                ],
                             }
                             yield f"data: {json.dumps(chunk)}\n\n"
                             yield "data: [DONE]\n\n"
@@ -335,9 +369,9 @@ class OpenAIProvider(BaseProvider):
                             retry_count += 1
                             last_error = fb_err
                             continue
-                        
+
                         return  # Success, exit retry loop
-                        
+
             except httpx.TimeoutException as e:
                 self._mark_key_failed(api_key)
                 retry_count += 1
@@ -348,6 +382,6 @@ class OpenAIProvider(BaseProvider):
                 retry_count += 1
                 last_error = e
                 continue
-        
+
         # All keys failed
         raise last_error or Exception("All OpenAI API keys failed")

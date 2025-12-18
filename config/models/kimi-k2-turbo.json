@@ -7,17 +7,8 @@
       "wire_protocol": "openai",
       "provider": "nahcrof",
       "model": "kimi-k2-0905-turbo",
-      "api_key_env": ["NAHCROF_API_KEY", "NAHCROF_API_KEY_BACKUP"]
-    },
-    {
-      "id": "anthropic-fallback",
-      "wire_protocol": "anthropic",
-      "provider": "anthropic",
-      "model": "claude-3-5-sonnet-20241022",
-      "api_key_env": ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_BACKUP"]
+      "api_key_env": ["NAHCROF_API_KEY"]
     }
   ],
-  "fallback_model_routings": [
-    "glm-4.6"
-  ]
+  "fallback_model_routings": ["glm-4.6"]
 }

@@ -71,20 +71,31 @@ Each provider config includes:
 
 ### Model Configuration
 
-Models are mapped to providers in `config/models.json`:
+Models are defined as individual routing configuration files under `config/models/`. Each logical model has its own JSON file named `<logical_model>.json` that describes routing (primary provider, fallbacks, api key env vars, timeouts, and wire-protocol).
+
+Example `config/models/gpt-5-2.json` (simplified):
 
 ```json
 {
-  "gpt-4": {
-    "provider": "openai",
-    "provider_model": "gpt-4"
-  },
-  "claude-3-opus": {
-    "provider": "anthropic",
-    "provider_model": "claude-3-opus-20240229"
-  }
+  "logical_name": "gpt-5.2",
+  "timeout_seconds": 60,
+  "model_routings": [
+    {
+      "id": "primary",
+      "wire_protocol": "openai",
+      "provider": "openai",
+      "model": "gpt-5.2",
+      "api_key_env": ["OPENAI_API_KEY", "OPENAI_API_KEY_1"]
+    }
+  ],
+  "fallback_model_routings": []
 }
 ```
+
+Notes:
+- The new routing system reads per-model JSON files in `config/models/` using `app.routing.config_loader.ModelConfigLoader`.
+- Use `config_loader.get_available_models()` to list logical models programmatically.
+- If you previously used a single `config/models.json` (the legacy flat mapping), you should migrate to per-model files by creating one JSON file per logical model in `config/models/`. A migration script can be added to automate splitting the flat mapping into per-model files; otherwise create files by hand using the example above.
 
 ## Running the Application
 
