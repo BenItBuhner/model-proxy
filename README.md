@@ -9,7 +9,7 @@ A production-ready FastAPI application that provides a unified, multi-provider L
 - **Multi-Provider Support**: Route requests to OpenAI or Anthropic based on model configuration
 - **API Key Fallback**: Automatic failover to backup API keys when rate limits or errors occur
 - **Circuit Breaker Pattern**: Failed keys enter cooldown period before retry
-- **Format Conversion**: Seamless conversion between OpenAI and Anthropic API formats
+- **Format Conversion**: Seamless conversion between OpenAI and Anthropic API formats (not perfect yet)
 - **Streaming Support**: Full Server-Sent Events (SSE) streaming for both providers
 - **Structured Logging**: Comprehensive request/response logging to SQLite database
 - **Rate Limiting**: Configurable per-client rate limits (requests and tokens per minute)
