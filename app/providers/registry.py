@@ -36,6 +36,7 @@ class ProviderRegistry:
             # Import here to avoid circular imports
             from app.providers.anthropic_provider import AnthropicProvider
             from app.providers.azure_provider import AzureProvider
+            from app.providers.gemini_provider import GeminiProvider
             from app.providers.openai_provider import OpenAIProvider
 
             cls._provider_classes = {
@@ -47,9 +48,10 @@ class ProviderRegistry:
                 "llama": OpenAIProvider,
                 "mistral": OpenAIProvider,
                 "cloudflare": OpenAIProvider,
-                "gemini": OpenAIProvider,
                 "chutes": OpenAIProvider,
                 "longcat": OpenAIProvider,
+                # Native Gemini provider (uses Google GenAI SDK)
+                "gemini": GeminiProvider,
                 # Anthropic provider
                 "anthropic": AnthropicProvider,
                 # Azure-based providers
@@ -112,10 +114,11 @@ class ProviderRegistry:
         provider_class = cls.get_provider_class(provider_name)
 
         # Create the provider instance
-        # AnthropicProvider doesn't take provider_name in constructor
+        # AnthropicProvider and GeminiProvider don't take provider_name in constructor
         from app.providers.anthropic_provider import AnthropicProvider
+        from app.providers.gemini_provider import GeminiProvider
 
-        if provider_class == AnthropicProvider:
+        if provider_class in (AnthropicProvider, GeminiProvider):
             provider = provider_class()
         else:
             provider = provider_class(provider_name)

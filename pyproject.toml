@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "model-proxy"
+version = "0.1.0"
+description = "A production-ready FastAPI application that provides a unified, multi-provider LLM inference proxy"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "sqlalchemy",
+    "httpx",
+    "python-dotenv",
+    "azure-ai-inference",
+    "google-genai",
+    "aiohttp"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

@@ -1,21 +1,23 @@
 # Load environment variables from .env file FIRST, before any other imports
 import os
+
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Import routers AFTER environment is loaded (they depend on auth which uses CLIENT_API_KEY)
-from app.routers.openai import router as openai_router
-from app.routers.anthropic import router as anthropic_router
-from app.routers.health import router as health_router
-from app.database import models
-from app.database import logging_models
-from app.database.database import engine
-from app.middleware.logging_middleware import LoggingMiddleware
 from app.core.provider_config import get_all_provider_configs
 from app.core.startup_validation import validate_startup
+from app.database import logging_models, models
+from app.database.database import engine
+from app.middleware.logging_middleware import LoggingMiddleware
+from app.routers.anthropic import router as anthropic_router
+from app.routers.health import router as health_router
+
+# Import routers AFTER environment is loaded (they depend on auth which uses CLIENT_API_KEY)
+from app.routers.openai import router as openai_router
 
 # Create all database tables
 models.Base.metadata.create_all(bind=engine)
@@ -40,7 +42,7 @@ except Exception as e:
 app = FastAPI(
     title="Centralized Inference Endpoint",
     description="Multi-provider LLM inference proxy with API key fallback",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # Add CORS middleware (first - outermost)

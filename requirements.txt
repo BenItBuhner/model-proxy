@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-pydantic
-sqlalchemy
-httpx
-python-dotenv
-pytest
-pytest-asyncio
-azure-ai-inference

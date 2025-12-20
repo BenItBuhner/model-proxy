@@ -1,5 +1,6 @@
+from typing import Any, Dict, List, Literal, Optional, Union
+
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any, Union, Literal
 
 
 class FunctionDefinition(BaseModel):
@@ -61,7 +62,6 @@ class ChatCompletionRequest(BaseModel):
     stop: Optional[Union[str, List[str]]] = None
     max_tokens: Optional[int] = Field(default=None, gt=0)
     presence_penalty: Optional[float] = Field(default=0.0, ge=-2.0, le=2.0)
-    frequency_penalty: Optional[float] = Field(default=0.0, ge=-2.0, le=2.0)
     logit_bias: Optional[Dict[str, float]] = None
     user: Optional[str] = None
     tools: Optional[List[ToolDefinition]] = None

@@ -27,7 +27,11 @@ cd centralized-inference-endpoint
 
 2. Install dependencies:
 ```bash
-pip install -r requirements.txt
+# Install uv if you don't have it
+pip install uv
+
+# Install project dependencies
+uv sync
 ```
 
 3. Set up environment variables (see [Configuration](#configuration) below)
@@ -109,7 +113,7 @@ Notes:
 ### Local Development
 
 ```bash
-uvicorn app.main:app --reload --port 9876
+uv run uvicorn app.main:app --port 9876
 ```
 
 The API will be available at `http://localhost:9876`
@@ -275,5 +279,5 @@ Errors are returned in provider-standardized formats:
 ### Running Tests
 
 ```bash
-pytest tests/ -v
+uv run pytest tests/ -v
 ```

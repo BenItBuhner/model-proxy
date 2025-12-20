@@ -84,6 +84,16 @@ class FallbackRouter:
 
         errors = []
 
+        if stream:
+            # For streaming, return a generator that handles fallback internally
+            return self._stream_with_fallback(
+                attempts=attempts,
+                request_data=request_data,
+                target_protocol=target_protocol,
+                logical_model=logical_model,
+            )
+
+        # Non-streaming request - try each attempt
         for attempt in attempts:
             logger.info(
                 f"Attempting route {attempt.attempt_number}: "
@@ -92,65 +102,16 @@ class FallbackRouter:
             )
 
             try:
-                if stream:
-                    # For streaming, we need to validate the route works before returning
-                    # the generator. We do this by starting the stream and checking for
-                    # immediate errors (auth, connection, etc.) before yielding.
-                    stream_gen = self._executor.execute_stream(
-                        route=attempt.route,
-                        request_data=request_data,
-                        target_protocol=target_protocol,
-                    )
-
-                    # Wrap the generator to handle errors and allow fallback
-                    # We return a wrapper that tries to get the first chunk
-                    # If it fails, we can't fallback (already returned), but at least
-                    # we tried this route. For proper pre-validation, we need to
-                    # actually start consuming the stream.
-                    validated_stream = self._create_validated_stream(
-                        stream_gen=stream_gen,
-                        attempt=attempt,
-                    )
-
-                    # Try to get the first chunk to validate the connection works
-                    # This will raise if there's an auth/connection error
-                    try:
-                        first_chunk = await validated_stream.__anext__()
-                    except StopAsyncIteration:
-                        # Empty stream is valid, return empty generator
-                        async def empty_gen():
-                            return
-                            yield  # Make it a generator
-
-                        return empty_gen()
-                    except Exception as stream_error:
-                        # Stream failed to start - this is a fallback-worthy error
-                        # Re-raise to trigger fallback to next route
-                        raise stream_error
-
-                    # Stream started successfully - return a generator that yields
-                    # the first chunk we already got, then the rest
-                    async def stream_with_first_chunk():
-                        yield first_chunk
-                        async for chunk in validated_stream:
-                            yield chunk
-
-                    logger.info(
-                        f"Streaming route started successfully: provider={attempt.route.provider}, "
-                        f"model={attempt.route.model}"
-                    )
-                    return stream_with_first_chunk()
-                else:
-                    result = await self._executor.execute(
-                        route=attempt.route,
-                        request_data=request_data,
-                        target_protocol=target_protocol,
-                    )
-                    logger.info(
-                        f"Route succeeded: provider={attempt.route.provider}, "
-                        f"model={attempt.route.model}"
-                    )
-                    return result
+                result = await self._executor.execute(
+                    route=attempt.route,
+                    request_data=request_data,
+                    target_protocol=target_protocol,
+                )
+                logger.info(
+                    f"Route succeeded: provider={attempt.route.provider}, "
+                    f"model={attempt.route.model}"
+                )
+                return result
 
             except Exception as e:
                 error_info = {
@@ -195,30 +156,88 @@ class FallbackRouter:
             message=error_message,
         )
 
-    async def _create_validated_stream(
+    async def _stream_with_fallback(
         self,
-        stream_gen: AsyncGenerator[str, None],
-        attempt: Attempt,
+        attempts: List[Attempt],
+        request_data: Dict[str, Any],
+        target_protocol: WireProtocol,
+        logical_model: str,
     ) -> AsyncGenerator[str, None]:
         """
-        Wrap a stream generator to add logging and error context.
+        Execute streaming request with fallback support.
 
-        Args:
-            stream_gen: The underlying stream generator
-            attempt: The attempt this stream is for
-
-        Yields:
-            Chunks from the underlying stream
+        This is a separate async generator to avoid lifecycle issues with
+        nested generators and closures.
         """
-        try:
-            async for chunk in stream_gen:
-                yield chunk
-        except Exception as e:
-            logger.error(
-                f"Streaming failed mid-stream: provider={attempt.route.provider}, "
-                f"model={attempt.route.model}, error={str(e)}"
+        errors = []
+
+        for attempt in attempts:
+            logger.info(
+                f"Attempting streaming route {attempt.attempt_number}: "
+                f"provider={attempt.route.provider}, model={attempt.route.model}, "
+                f"is_fallback={attempt.is_fallback_route}"
             )
-            raise
+
+            try:
+                # Get the stream generator
+                stream_gen = self._executor.execute_stream(
+                    route=attempt.route,
+                    request_data=request_data,
+                    target_protocol=target_protocol,
+                )
+
+                async for chunk in stream_gen:
+                    yield chunk
+
+                # Stream completed successfully
+                logger.info(
+                    f"Streaming route completed: provider={attempt.route.provider}, "
+                    f"model={attempt.route.model}"
+                )
+                return  # Exit the generator
+
+            except Exception as e:
+                error_info = {
+                    "attempt": attempt.attempt_number,
+                    "provider": attempt.route.provider,
+                    "model": attempt.route.model,
+                    "route_id": attempt.route.route_id,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                }
+
+                # Check if this is a fallback-worthy error
+                if self._is_fallback_worthy_error(e):
+                    logger.warning(
+                        f"Route failed (will try fallback): "
+                        f"provider={attempt.route.provider}, model={attempt.route.model}, "
+                        f"error={str(e)}"
+                    )
+                    errors.append(error_info)
+                    continue  # Try next attempt
+                else:
+                    # Non-fallback error, re-raise
+                    logger.error(
+                        f"Route failed (non-recoverable): "
+                        f"provider={attempt.route.provider}, model={attempt.route.model}, "
+                        f"error={str(e)}"
+                    )
+                    raise
+
+        # All attempts failed
+        error_message = self._format_routing_error_message(
+            logical_model, attempts, errors
+        )
+        logger.error(
+            f"All streaming routes failed for '{logical_model}': {len(errors)} attempts failed"
+        )
+
+        raise RoutingError(
+            logical_model=logical_model,
+            attempted_routes=attempts,
+            errors=errors,
+            message=error_message,
+        )
 
     def resolve_attempts(self, logical_model: str) -> List[Attempt]:
         """
@@ -365,13 +384,14 @@ class FallbackRouter:
         # Check for HTTP status errors
         if hasattr(error, "status"):
             status = error.status
-            # 401/403 are auth errors - likely permanent issues with this key
-            # Don't fallback to same provider with different key for auth errors
-            if status in (401, 403):
-                return True  # Still allow fallback to different provider/key
-            # Other 4xx and 5xx errors are fallback-worthy
-            if 400 <= status < 600:
-                return True
+            if status is not None:
+                # 401/403 are auth errors - likely permanent issues with this key
+                # Don't fallback to same provider with different key for auth errors
+                if status in (401, 403):
+                    return True  # Still allow fallback to different provider/key
+                # Other 4xx and 5xx errors are fallback-worthy
+                if 400 <= status < 600:
+                    return True
 
         # Check for RouteExecutionError
         if isinstance(error, RouteExecutionError):
