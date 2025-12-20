@@ -4,6 +4,8 @@ A production-ready FastAPI application that provides a unified, multi-provider L
 
 **Warning:** This repo is under heavy development and is not yet ready for production use; be wary of inbound changed, frequent refactors, and more.
 
+![Model Proxy Banner](assets/github/model-proxy-banner.png)
+
 ## Features
 
 - **Multi-Provider Support**: Route requests to OpenAI or Anthropic based on model configuration
