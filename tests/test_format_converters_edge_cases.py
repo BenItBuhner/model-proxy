@@ -4,7 +4,6 @@ Comprehensive tests for format converters edge cases.
 
 import json
 
-import pytest
 
 from app.core.format_converters import (
     anthropic_to_openai_request,

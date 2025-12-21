@@ -10,11 +10,10 @@ import os
 from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Optional
 
 import aiohttp
-from aiohttp.client_exceptions import ClientError
 
 from app.routing.config_loader import config_loader
 from app.routing.executor import RouteExecutionError, RouteExecutor, get_executor
-from app.routing.models import Attempt, ModelRoutingConfig, ResolvedRoute, RoutingError
+from app.routing.models import Attempt, ResolvedRoute, RoutingError
 
 logger = logging.getLogger("fallback_router")
 

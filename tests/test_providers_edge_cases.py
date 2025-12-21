@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.core.api_key_manager import mark_key_failed, reset_failed_keys
+from app.core.api_key_manager import reset_failed_keys
 from app.providers.anthropic_provider import AnthropicProvider
 from app.providers.openai_provider import OpenAIProvider
 

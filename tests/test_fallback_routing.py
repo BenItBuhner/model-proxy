@@ -4,10 +4,8 @@ Tests the RouteExecutor, ProviderRegistry, and FallbackRouter integration.
 """
 
 import asyncio
-import json
 import os
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -15,7 +13,6 @@ from app.providers.base import BaseProvider
 from app.providers.registry import (
     ProviderRegistry,
     get_available_providers,
-    get_provider,
     is_valid_provider,
 )
 from app.routing.executor import RouteExecutionError, RouteExecutor, get_executor
@@ -641,7 +638,7 @@ class TestConvenienceFunctions:
         mock_router.call_with_fallback = AsyncMock(return_value={"success": True})
         mock_router_class.return_value = mock_router
 
-        result = await call_with_fallback(
+        await call_with_fallback(
             logical_model="test-model",
             request_data={"messages": []},
             target_protocol="openai",

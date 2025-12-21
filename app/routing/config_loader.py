@@ -2,8 +2,8 @@
 Configuration loader for model routing.
 Loads and caches JSON configurations from config/models/ directory.
 """
+
 import json
-import os
 import time
 from pathlib import Path
 from typing import Dict, Optional, Any
@@ -30,7 +30,9 @@ class ModelConfigLoader:
         self._cache_timestamps: Dict[str, float] = {}
         self._config_cache: Dict[str, ModelRoutingConfig] = {}
 
-    def load_config(self, logical_model: str, force_reload: bool = False) -> ModelRoutingConfig:
+    def load_config(
+        self, logical_model: str, force_reload: bool = False
+    ) -> ModelRoutingConfig:
         """
         Load configuration for a logical model.
 
@@ -61,7 +63,7 @@ class ModelConfigLoader:
             )
 
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 raw_config = json.load(f)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON in {config_path}: {e}")

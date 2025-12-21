@@ -76,7 +76,7 @@ class GeminiProvider(BaseProvider):
 
             # Handle tool/function responses
             if role == "tool" or role == "function":
-                tool_call_id = msg.get("tool_call_id", "")
+                msg.get("tool_call_id", "")
                 function_name = msg.get("name", "")
                 # Create a function response part
                 contents.append(
@@ -488,7 +488,6 @@ class GeminiProvider(BaseProvider):
                 created = int(time.time())
 
                 # Track tool calls across chunks
-                accumulated_tool_calls = []
                 tool_call_index = 0
 
                 async for chunk in await client.aio.models.generate_content_stream(

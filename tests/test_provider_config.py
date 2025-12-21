@@ -1,11 +1,8 @@
 """
 Tests for provider configuration system.
 """
+
 import pytest
-import json
-import os
-from pathlib import Path
-from unittest.mock import patch, mock_open
 from app.core.provider_config import (
     load_provider_config,
     get_all_provider_configs,
@@ -15,7 +12,7 @@ from app.core.provider_config import (
     get_provider_endpoint,
     get_provider_auth_headers,
     get_provider_env_var_patterns,
-    is_provider_enabled
+    is_provider_enabled,
 )
 
 
@@ -23,7 +20,7 @@ def test_load_provider_config_openai():
     """Test loading OpenAI provider config."""
     config = load_provider_config("openai")
     assert config["name"] == "openai"
-    assert config["enabled"] == True
+    assert config["enabled"]
     assert "endpoints" in config
     assert "authentication" in config
     assert config["endpoints"]["base_url"] == "https://api.openai.com/v1"
@@ -33,7 +30,7 @@ def test_load_provider_config_anthropic():
     """Test loading Anthropic provider config."""
     config = load_provider_config("anthropic")
     assert config["name"] == "anthropic"
-    assert config["enabled"] == True
+    assert config["enabled"]
     assert "endpoints" in config
     assert config["endpoints"]["base_url"] == "https://api.anthropic.com/v1"
 
@@ -77,16 +74,11 @@ def test_validate_provider_config():
     config = {
         "name": "test",
         "enabled": True,
-        "endpoints": {
-            "base_url": "https://api.test.com"
-        },
-        "authentication": {
-            "type": "bearer",
-            "header_name": "Authorization"
-        }
+        "endpoints": {"base_url": "https://api.test.com"},
+        "authentication": {"type": "bearer", "header_name": "Authorization"},
     }
     result = validate_provider_config(config)
-    assert result == True
+    assert result
 
 
 def test_validate_provider_config_invalid():
@@ -138,13 +130,13 @@ def test_get_provider_env_var_patterns():
 def test_is_provider_enabled():
     """Test checking if provider is enabled."""
     enabled = is_provider_enabled("openai")
-    assert enabled == True
+    assert enabled
 
 
 def test_is_provider_enabled_not_found():
     """Test checking non-existent provider."""
     enabled = is_provider_enabled("nonexistent")
-    assert enabled == False
+    assert not enabled
 
 
 def test_provider_config_proxy_support():
@@ -153,4 +145,3 @@ def test_provider_config_proxy_support():
     assert "proxy_support" in config
     assert "enabled" in config["proxy_support"]
     assert "base_url_override" in config["proxy_support"]
-

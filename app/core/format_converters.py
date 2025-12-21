@@ -1,6 +1,7 @@
 """
 Format converters for converting between OpenAI and Anthropic request/response formats.
 """
+
 import json
 import time
 from typing import Dict, Any, List, Tuple, Union, Iterable, Optional
@@ -40,21 +41,23 @@ def _openai_text_blocks(content: Any) -> List[Dict[str, Any]]:
         return blocks
     if isinstance(content, str):
         if content:
-            blocks.append({ "type": TEXT_BLOCK, "text": content })
+            blocks.append({"type": TEXT_BLOCK, "text": content})
         return blocks
     if isinstance(content, list):
         for part in content:
             if isinstance(part, dict):
                 if part.get("type") == TEXT_BLOCK:
-                    blocks.append({ "type": TEXT_BLOCK, "text": part.get("text", "") })
+                    blocks.append({"type": TEXT_BLOCK, "text": part.get("text", "")})
                 else:
-                    blocks.append({ "type": TEXT_BLOCK, "text": _json_dumps_compact(part) })
+                    blocks.append(
+                        {"type": TEXT_BLOCK, "text": _json_dumps_compact(part)}
+                    )
             elif isinstance(part, str):
-                blocks.append({ "type": TEXT_BLOCK, "text": part })
+                blocks.append({"type": TEXT_BLOCK, "text": part})
             elif part is not None:
-                blocks.append({ "type": TEXT_BLOCK, "text": str(part) })
+                blocks.append({"type": TEXT_BLOCK, "text": str(part)})
         return blocks
-    blocks.append({ "type": TEXT_BLOCK, "text": str(content) })
+    blocks.append({"type": TEXT_BLOCK, "text": str(content)})
     return blocks
 
 
@@ -71,11 +74,11 @@ def _normalize_tool_result_content(content: Any) -> Any:
         normalized: List[Dict[str, Any]] = []
         for part in content:
             if isinstance(part, dict) and part.get("type") == TEXT_BLOCK:
-                normalized.append({ "type": TEXT_BLOCK, "text": part.get("text", "") })
+                normalized.append({"type": TEXT_BLOCK, "text": part.get("text", "")})
             elif isinstance(part, str):
-                normalized.append({ "type": TEXT_BLOCK, "text": part })
+                normalized.append({"type": TEXT_BLOCK, "text": part})
             elif part is not None:
-                normalized.append({ "type": TEXT_BLOCK, "text": str(part) })
+                normalized.append({"type": TEXT_BLOCK, "text": str(part)})
         return normalized or ""
     return content or ""
 
@@ -88,7 +91,7 @@ def _iter_anthropic_blocks(content: Any) -> Iterable[Dict[str, Any]]:
     elif isinstance(content, dict):
         yield content
     elif content not in (None, ""):
-        yield { "type": TEXT_BLOCK, "text": str(content) }
+        yield {"type": TEXT_BLOCK, "text": str(content)}
 
 
 def _anthropic_block_to_text(block: Dict[str, Any]) -> str:
@@ -99,9 +102,7 @@ def _anthropic_block_to_text(block: Dict[str, Any]) -> str:
         inner = block.get("content")
         if isinstance(inner, list):
             return "".join(
-                _anthropic_block_to_text(sub)
-                for sub in inner
-                if isinstance(sub, dict)
+                _anthropic_block_to_text(sub) for sub in inner if isinstance(sub, dict)
             )
         if isinstance(inner, str):
             return inner
@@ -112,7 +113,9 @@ def _anthropic_block_to_text(block: Dict[str, Any]) -> str:
     return _json_dumps_compact(block)
 
 
-def _split_anthropic_user_content(content: Any) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+def _split_anthropic_user_content(
+    content: Any,
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     text_chunks: List[str] = []
     tool_messages: List[Dict[str, Any]] = []
     for block in _iter_anthropic_blocks(content):
@@ -120,19 +123,24 @@ def _split_anthropic_user_content(content: Any) -> Tuple[Optional[str], List[Dic
         if btype == TEXT_BLOCK:
             text_chunks.append(block.get("text", ""))
         elif btype == TOOL_RESULT_BLOCK:
-            tool_messages.append({
-                "role": "tool",
-                "tool_call_id": block.get("tool_use_id"),
-                "content": block.get("content") if isinstance(block.get("content"), str)
-                else _anthropic_block_to_text(block)
-            })
+            tool_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": block.get("tool_use_id"),
+                    "content": block.get("content")
+                    if isinstance(block.get("content"), str)
+                    else _anthropic_block_to_text(block),
+                }
+            )
         else:
             text_chunks.append(_anthropic_block_to_text(block))
     text = "\n".join(filter(None, text_chunks))
     return (text or None, tool_messages)
 
 
-def _split_anthropic_assistant_content(content: Any) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+def _split_anthropic_assistant_content(
+    content: Any,
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     text_chunks: List[str] = []
     tool_calls: List[Dict[str, Any]] = []
     for block in _iter_anthropic_blocks(content):
@@ -141,14 +149,13 @@ def _split_anthropic_assistant_content(content: Any) -> Tuple[Optional[str], Lis
             text_chunks.append(block.get("text", ""))
         elif btype == TOOL_USE_BLOCK:
             args = _json_dumps_compact(block.get("input", {}))
-            tool_calls.append({
-                "id": block.get("id") or f"call_{len(tool_calls)}",
-                "type": "function",
-                "function": {
-                    "name": block.get("name"),
-                    "arguments": args
+            tool_calls.append(
+                {
+                    "id": block.get("id") or f"call_{len(tool_calls)}",
+                    "type": "function",
+                    "function": {"name": block.get("name"), "arguments": args},
                 }
-            })
+            )
         elif btype == TOOL_RESULT_BLOCK:
             text_chunks.append(_anthropic_block_to_text(block))
         else:
@@ -164,7 +171,11 @@ def anthropic_to_openai_request(anthropic_request: Dict[str, Any]) -> Dict[str, 
     openai_messages: List[Dict[str, Any]] = []
     system_content = anthropic_request.get("system")
     if system_content:
-        system_text = _anthropic_block_to_text({"type": TEXT_BLOCK, "text": system_content}) if isinstance(system_content, str) else ""
+        system_text = (
+            _anthropic_block_to_text({"type": TEXT_BLOCK, "text": system_content})
+            if isinstance(system_content, str)
+            else ""
+        )
         if not system_text and isinstance(system_content, list):
             system_text = "\n".join(
                 _anthropic_block_to_text(block)
@@ -189,7 +200,14 @@ def anthropic_to_openai_request(anthropic_request: Dict[str, Any]) -> Dict[str, 
                 openai_messages.append({"role": "user", "content": text})
             openai_messages.extend(tool_outputs)
         else:
-            openai_messages.append({"role": role, "content": _anthropic_block_to_text({"type": TEXT_BLOCK, "text": content})})
+            openai_messages.append(
+                {
+                    "role": role,
+                    "content": _anthropic_block_to_text(
+                        {"type": TEXT_BLOCK, "text": content}
+                    ),
+                }
+            )
 
     openai_request = {
         "model": anthropic_request.get("model"),
@@ -206,21 +224,23 @@ def anthropic_to_openai_request(anthropic_request: Dict[str, Any]) -> Dict[str, 
     if "tools" in anthropic_request:
         tools = []
         for tool in anthropic_request["tools"]:
-            tools.append({
-                "type": "function",
-                "function": {
-                    "name": tool.get("name"),
-                    "description": tool.get("description"),
-                    "parameters": tool.get("input_schema", {})
+            tools.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("name"),
+                        "description": tool.get("description"),
+                        "parameters": tool.get("input_schema", {}),
+                    },
                 }
-            })
+            )
         openai_request["tools"] = tools
     if "tool_choice" in anthropic_request:
         tool_choice = anthropic_request["tool_choice"]
         if isinstance(tool_choice, dict) and tool_choice.get("type") == "tool":
             openai_request["tool_choice"] = {
                 "type": "function",
-                "function": {"name": tool_choice.get("name")}
+                "function": {"name": tool_choice.get("name")},
             }
         else:
             openai_request["tool_choice"] = tool_choice
@@ -248,7 +268,9 @@ def openai_to_anthropic_request(openai_request: Dict[str, Any]) -> Dict[str, Any
         if role == "system":
             text = msg.get("content")
             if isinstance(text, list):
-                text = "".join(part.get("text", "") for part in text if isinstance(part, dict))
+                text = "".join(
+                    part.get("text", "") for part in text if isinstance(part, dict)
+                )
             if text:
                 system_segments.append(text)
             continue
@@ -258,7 +280,9 @@ def openai_to_anthropic_request(openai_request: Dict[str, Any]) -> Dict[str, Any
                 "type": TOOL_RESULT_BLOCK,
                 "tool_use_id": msg.get("tool_call_id"),
                 "content": _normalize_tool_result_content(content),
-                "is_error": msg.get("metadata", {}).get("is_error") if isinstance(msg.get("metadata"), dict) else None,
+                "is_error": msg.get("metadata", {}).get("is_error")
+                if isinstance(msg.get("metadata"), dict)
+                else None,
             }
             messages.append({"role": "user", "content": [block]})
             continue
@@ -267,18 +291,19 @@ def openai_to_anthropic_request(openai_request: Dict[str, Any]) -> Dict[str, Any
         blocks = _openai_text_blocks(content)
         if role == "assistant" and msg.get("tool_calls"):
             for call in msg.get("tool_calls", []):
-                parsed_args = _parse_arguments(call.get("function", {}).get("arguments"))
-                blocks.append({
-                    "type": TOOL_USE_BLOCK,
-                    "id": call.get("id"),
-                    "name": call.get("function", {}).get("name"),
-                    "input": parsed_args,
-                })
+                parsed_args = _parse_arguments(
+                    call.get("function", {}).get("arguments")
+                )
+                blocks.append(
+                    {
+                        "type": TOOL_USE_BLOCK,
+                        "id": call.get("id"),
+                        "name": call.get("function", {}).get("name"),
+                        "input": parsed_args,
+                    }
+                )
         normalized_content = _collapse_blocks(blocks)
-        messages.append({
-            "role": target_role,
-            "content": normalized_content
-        })
+        messages.append({"role": target_role, "content": normalized_content})
 
     system_prompt = "\n\n".join(seg for seg in system_segments if seg)
 
@@ -306,17 +331,19 @@ def openai_to_anthropic_request(openai_request: Dict[str, Any]) -> Dict[str, Any
         for tool in openai_request["tools"]:
             if tool.get("type") == "function":
                 func = tool.get("function", {})
-                tools.append({
-                    "name": func.get("name"),
-                    "description": func.get("description", ""),
-                    "input_schema": func.get("parameters", {})
-                })
+                tools.append(
+                    {
+                        "name": func.get("name"),
+                        "description": func.get("description", ""),
+                        "input_schema": func.get("parameters", {}),
+                    }
+                )
         anthropic_request["tools"] = tools
     tool_choice = openai_request.get("tool_choice")
     if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
         anthropic_request["tool_choice"] = {
             "type": "tool",
-            "name": tool_choice.get("function", {}).get("name")
+            "name": tool_choice.get("function", {}).get("name"),
         }
     elif tool_choice:
         anthropic_request["tool_choice"] = tool_choice
@@ -324,7 +351,9 @@ def openai_to_anthropic_request(openai_request: Dict[str, Any]) -> Dict[str, Any
     return anthropic_request
 
 
-def anthropic_to_openai_response(anthropic_response: Dict[str, Any], model: str) -> Dict[str, Any]:
+def anthropic_to_openai_response(
+    anthropic_response: Dict[str, Any], model: str
+) -> Dict[str, Any]:
     """
     Convert Anthropic response format to OpenAI format.
     """
@@ -341,14 +370,16 @@ def anthropic_to_openai_response(anthropic_response: Dict[str, Any], model: str)
         elif btype == TOOL_USE_BLOCK:
             if tool_calls is None:
                 tool_calls = []
-            tool_calls.append({
-                "id": block.get("id"),
-                "type": "function",
-                "function": {
-                    "name": block.get("name"),
-                    "arguments": _json_dumps_compact(block.get("input", {}))
+            tool_calls.append(
+                {
+                    "id": block.get("id"),
+                    "type": "function",
+                    "function": {
+                        "name": block.get("name"),
+                        "arguments": _json_dumps_compact(block.get("input", {})),
+                    },
                 }
-            })
+            )
         elif btype == TOOL_RESULT_BLOCK:
             text_content += _anthropic_block_to_text(block)
 
@@ -361,7 +392,9 @@ def anthropic_to_openai_response(anthropic_response: Dict[str, Any], model: str)
         None: "stop",
     }
     # If there are tool calls, finish_reason should be "tool_calls" regardless of stop_reason
-    finish_reason = "tool_calls" if tool_calls else finish_reason_map.get(stop_reason, "stop")
+    finish_reason = (
+        "tool_calls" if tool_calls else finish_reason_map.get(stop_reason, "stop")
+    )
 
     usage = anthropic_response.get("usage", {})
 
@@ -385,8 +418,9 @@ def anthropic_to_openai_response(anthropic_response: Dict[str, Any], model: str)
         "usage": {
             "prompt_tokens": usage.get("input_tokens", 0),
             "completion_tokens": usage.get("output_tokens", 0),
-            "total_tokens": usage.get("input_tokens", 0) + usage.get("output_tokens", 0),
-        }
+            "total_tokens": usage.get("input_tokens", 0)
+            + usage.get("output_tokens", 0),
+        },
     }
 
     if tool_calls:
@@ -395,7 +429,9 @@ def anthropic_to_openai_response(anthropic_response: Dict[str, Any], model: str)
     return openai_response
 
 
-def openai_to_anthropic_response(openai_response: Dict[str, Any], model: str) -> Dict[str, Any]:
+def openai_to_anthropic_response(
+    openai_response: Dict[str, Any], model: str
+) -> Dict[str, Any]:
     """
     Convert OpenAI response format to Anthropic format.
     """
@@ -409,7 +445,9 @@ def openai_to_anthropic_response(openai_response: Dict[str, Any], model: str) ->
     elif isinstance(content, list):
         for part in content:
             if isinstance(part, dict) and part.get("type") == TEXT_BLOCK:
-                content_blocks.append({"type": TEXT_BLOCK, "text": part.get("text", "")})
+                content_blocks.append(
+                    {"type": TEXT_BLOCK, "text": part.get("text", "")}
+                )
             elif isinstance(part, str):
                 content_blocks.append({"type": TEXT_BLOCK, "text": part})
 
@@ -417,12 +455,14 @@ def openai_to_anthropic_response(openai_response: Dict[str, Any], model: str) ->
     for tool_call in tool_calls:
         func = tool_call.get("function", {})
         input_data = _parse_arguments(func.get("arguments"))
-        content_blocks.append({
-            "type": TOOL_USE_BLOCK,
-            "id": tool_call.get("id"),
-            "name": func.get("name"),
-            "input": input_data
-        })
+        content_blocks.append(
+            {
+                "type": TOOL_USE_BLOCK,
+                "id": tool_call.get("id"),
+                "name": func.get("name"),
+                "input": input_data,
+            }
+        )
 
     finish_reason = choice.get("finish_reason", "stop")
     stop_reason_map = {
@@ -446,7 +486,7 @@ def openai_to_anthropic_response(openai_response: Dict[str, Any], model: str) ->
             "output_tokens": usage.get("completion_tokens", 0),
             "cache_creation_input_tokens": 0,
             "cache_read_input_tokens": 0,
-        }
+        },
     }
 
     return anthropic_response

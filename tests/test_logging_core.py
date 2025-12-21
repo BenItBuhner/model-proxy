@@ -1,14 +1,14 @@
 """
 Tests for structured logging core utilities.
 """
-import pytest
+
 import uuid
 from app.core.logging import (
     generate_request_id,
     hash_api_key,
     extract_parameters_from_request,
     extract_usage_from_response,
-    extract_response_content
+    extract_response_content,
 )
 
 
@@ -57,7 +57,7 @@ def test_extract_parameters_from_request():
         "presence_penalty": 0.0,
         "frequency_penalty": 0.0,
         "user": "test_user",
-        "stream": False
+        "stream": False,
     }
     parameters = extract_parameters_from_request(request_dict)
     assert parameters["temperature"] == 0.7
@@ -74,7 +74,7 @@ def test_extract_parameters_from_request_partial():
     request_dict = {
         "model": "gpt-4",
         "messages": [{"role": "user", "content": "Hello"}],
-        "temperature": 0.7
+        "temperature": 0.7,
     }
     parameters = extract_parameters_from_request(request_dict)
     assert parameters["temperature"] == 0.7
@@ -85,11 +85,7 @@ def test_extract_usage_from_response_openai():
     """Test usage extraction from OpenAI format."""
     response = {
         "id": "chatcmpl-123",
-        "usage": {
-            "prompt_tokens": 10,
-            "completion_tokens": 20,
-            "total_tokens": 30
-        }
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
     }
     usage = extract_usage_from_response(response)
     assert usage["prompt_tokens"] == 10
@@ -99,13 +95,7 @@ def test_extract_usage_from_response_openai():
 
 def test_extract_usage_from_response_anthropic():
     """Test usage extraction from Anthropic format."""
-    response = {
-        "id": "msg_123",
-        "usage": {
-            "input_tokens": 10,
-            "output_tokens": 20
-        }
-    }
+    response = {"id": "msg_123", "usage": {"input_tokens": 10, "output_tokens": 20}}
     usage = extract_usage_from_response(response)
     assert usage["prompt_tokens"] == 10
     assert usage["completion_tokens"] == 20
@@ -122,14 +112,7 @@ def test_extract_usage_from_response_none():
 def test_extract_response_content_openai():
     """Test content extraction from OpenAI format."""
     response = {
-        "choices": [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": "Hello there!"
-                }
-            }
-        ]
+        "choices": [{"message": {"role": "assistant", "content": "Hello there!"}}]
     }
     content = extract_response_content(response, is_openai_format=True)
     assert content == "Hello there!"
@@ -137,14 +120,7 @@ def test_extract_response_content_openai():
 
 def test_extract_response_content_anthropic():
     """Test content extraction from Anthropic format."""
-    response = {
-        "content": [
-            {
-                "type": "text",
-                "text": "Hello there!"
-            }
-        ]
-    }
+    response = {"content": [{"type": "text", "text": "Hello there!"}]}
     content = extract_response_content(response, is_openai_format=False)
     assert content == "Hello there!"
 
@@ -154,4 +130,3 @@ def test_extract_response_content_none():
     response = {"id": "test"}
     content = extract_response_content(response, is_openai_format=True)
     assert content is None
-

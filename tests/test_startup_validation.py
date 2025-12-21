@@ -1,9 +1,9 @@
 """
 Tests for startup validation functionality.
 """
+
 import pytest
 import os
-from unittest.mock import patch, MagicMock
 from app.core.startup_validation import (
     validate_database,
     validate_client_api_key,
@@ -11,7 +11,7 @@ from app.core.startup_validation import (
     validate_provider_api_keys,
     validate_model_config,
     validate_startup,
-    StartupValidationError
+    StartupValidationError,
 )
 
 
@@ -58,7 +58,7 @@ def test_validate_provider_api_keys(monkeypatch):
     """Test provider API key validation."""
     monkeypatch.setenv("OPENAI_API_KEY_1", "test_key_1")
     monkeypatch.setenv("ANTHROPIC_API_KEY_1", "test_key_2")
-    
+
     is_valid, warnings = validate_provider_api_keys()
     assert is_valid is True
 
@@ -69,7 +69,7 @@ def test_validate_provider_api_keys_none(monkeypatch):
     for key in os.environ.keys():
         if "API_KEY" in key:
             monkeypatch.delenv(key, raising=False)
-    
+
     is_valid, warnings = validate_provider_api_keys()
     # Should fail if no keys are configured
     assert is_valid is False
@@ -88,7 +88,7 @@ def test_validate_startup_success(monkeypatch):
     monkeypatch.setenv("CLIENT_API_KEY", "test_key")
     monkeypatch.setenv("OPENAI_API_KEY_1", "test_key_1")
     monkeypatch.setenv("ANTHROPIC_API_KEY_1", "test_key_2")
-    
+
     # Should not raise
     try:
         validate_startup()
@@ -102,9 +102,8 @@ def test_validate_startup_failure(monkeypatch):
     for key in list(os.environ.keys()):
         if "API_KEY" in key:
             monkeypatch.delenv(key, raising=False)
-    
+
     # validate_startup() always raises if there are errors
     # The FAIL_ON_STARTUP_VALIDATION check is in main.py, not here
     with pytest.raises(StartupValidationError):
         validate_startup()
-

@@ -23,9 +23,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
-    "pytest-asyncio"
+    "pytest-asyncio",
+    "ruff"
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.ruff.lint]
+per-file-ignores = {"app/main.py" = ["E402"]}

@@ -188,7 +188,7 @@ def test_streaming_endpoint_logs_request(client, db_session):
             if logs:
                 log = logging_crud.get_request_by_id(new_db, request_id)
                 if log:
-                    assert log.is_streaming == True
+                    assert log.is_streaming
                     assert log.endpoint == "/v1/chat/completions-stream"
         finally:
             new_db.close()

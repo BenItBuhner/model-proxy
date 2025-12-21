@@ -1,6 +1,7 @@
 """
 Tests for client authentication module.
 """
+
 import pytest
 from fastapi import HTTPException
 from app.auth import verify_client_api_key, CLIENT_API_KEY
@@ -26,7 +27,7 @@ async def test_verify_client_api_key_invalid():
     """Test invalid API key authentication."""
     with pytest.raises(HTTPException) as exc_info:
         await verify_client_api_key(authorization="Bearer invalid_key")
-    
+
     assert exc_info.value.status_code == 401
     assert "Invalid API key" in exc_info.value.detail
 
@@ -36,7 +37,7 @@ async def test_verify_client_api_key_missing():
     """Test missing Authorization header."""
     with pytest.raises(HTTPException) as exc_info:
         await verify_client_api_key(authorization=None)
-    
+
     assert exc_info.value.status_code == 401
     assert "Missing Authorization header" in exc_info.value.detail
 
@@ -46,6 +47,5 @@ async def test_verify_client_api_key_empty():
     """Test empty Authorization header."""
     with pytest.raises(HTTPException) as exc_info:
         await verify_client_api_key(authorization="")
-    
-    assert exc_info.value.status_code == 401
 
+    assert exc_info.value.status_code == 401

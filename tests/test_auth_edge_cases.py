@@ -1,6 +1,7 @@
 """
 Comprehensive tests for authentication edge cases.
 """
+
 import pytest
 from fastapi import HTTPException
 from app.auth import verify_client_api_key, CLIENT_API_KEY
@@ -52,6 +53,7 @@ async def test_verify_client_api_key_bearer_lowercase():
 @pytest.mark.asyncio
 async def test_verify_client_api_key_multiple_bearer():
     """Test handling of multiple Bearer prefixes."""
-    result = await verify_client_api_key(authorization=f"Bearer Bearer {CLIENT_API_KEY}")
+    result = await verify_client_api_key(
+        authorization=f"Bearer Bearer {CLIENT_API_KEY}"
+    )
     assert result is True  # Should strip all Bearer prefixes
-

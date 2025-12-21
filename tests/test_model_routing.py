@@ -6,23 +6,19 @@ Tests the new multi-level fallback system with API key, provider, and model fall
 import asyncio
 import json
 import os
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from app.routing.config_loader import ModelConfigLoader
-from app.routing.executor import RouteExecutionError, RouteExecutor
 from app.routing.models import (
     Attempt,
-    AttemptResult,
     ModelRoutingConfig,
     ResolvedRoute,
     RouteConfig,
     RoutingError,
-    RoutingResult,
 )
-from app.routing.router import FallbackRouter, call_with_fallback
+from app.routing.router import FallbackRouter
 
 
 class TestModelRoutingConfig:

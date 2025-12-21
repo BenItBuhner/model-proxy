@@ -1,11 +1,11 @@
 """
 Tests for logging middleware.
 """
+
 import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from app.middleware.logging_middleware import LoggingMiddleware
-from app.core.logging import generate_request_id
 
 
 @pytest.fixture
@@ -13,14 +13,14 @@ def app_with_middleware():
     """Create FastAPI app with logging middleware."""
     app = FastAPI()
     app.add_middleware(LoggingMiddleware)
-    
+
     @app.get("/test")
     async def test_endpoint(request: Request):
         return {
             "request_id": getattr(request.state, "request_id", None),
-            "start_time": getattr(request.state, "start_time", None)
+            "start_time": getattr(request.state, "start_time", None),
         }
-    
+
     return app
 
 
@@ -57,6 +57,5 @@ def test_logging_middleware_unique_request_ids(app_with_middleware):
     client = TestClient(app_with_middleware)
     response1 = client.get("/test")
     response2 = client.get("/test")
-    
-    assert response1.headers["X-Request-ID"] != response2.headers["X-Request-ID"]
 
+    assert response1.headers["X-Request-ID"] != response2.headers["X-Request-ID"]

@@ -9,7 +9,7 @@ This module provides the RouteExecutor class which handles:
 """
 
 import logging
-from typing import Any, AsyncGenerator, Dict, Literal, Optional, Union
+from typing import Any, AsyncGenerator, Dict, Literal, Optional
 
 from app.core.format_converters import (
     anthropic_to_openai_request,

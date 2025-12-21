@@ -4,7 +4,6 @@ Tests for format converters module.
 
 import json
 
-import pytest
 
 from app.core.format_converters import (
     anthropic_to_openai_request,

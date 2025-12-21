@@ -1,15 +1,15 @@
 """
 Tests for health check endpoints.
 """
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
 from app.routers.health import (
     check_database,
     check_providers,
     check_model_config,
     check_provider_configs,
-    get_overall_status
+    get_overall_status,
 )
 
 
@@ -17,6 +17,7 @@ from app.routers.health import (
 def client():
     """Test client fixture."""
     from app.main import app
+
     with TestClient(app) as c:
         yield c
 
@@ -100,10 +101,10 @@ def test_get_overall_status_healthy():
         "database": {"status": "healthy"},
         "providers": {
             "openai": {"status": "healthy", "keys_available": 1},
-            "anthropic": {"status": "healthy", "keys_available": 1}
+            "anthropic": {"status": "healthy", "keys_available": 1},
         },
         "model_config": {"status": "healthy"},
-        "provider_configs": {"status": "healthy"}
+        "provider_configs": {"status": "healthy"},
     }
     status = get_overall_status(components)
     assert status == "healthy"
@@ -115,10 +116,10 @@ def test_get_overall_status_degraded():
         "database": {"status": "healthy"},
         "providers": {
             "openai": {"status": "healthy", "keys_available": 0},
-            "anthropic": {"status": "healthy", "keys_available": 1}
+            "anthropic": {"status": "healthy", "keys_available": 1},
         },
         "model_config": {"status": "healthy"},
-        "provider_configs": {"status": "healthy"}
+        "provider_configs": {"status": "healthy"},
     }
     status = get_overall_status(components)
     assert status == "degraded"
@@ -128,12 +129,9 @@ def test_get_overall_status_unhealthy():
     """Test overall status calculation when unhealthy."""
     components = {
         "database": {"status": "unhealthy"},
-        "providers": {
-            "openai": {"status": "healthy", "keys_available": 1}
-        },
+        "providers": {"openai": {"status": "healthy", "keys_available": 1}},
         "model_config": {"status": "healthy"},
-        "provider_configs": {"status": "healthy"}
+        "provider_configs": {"status": "healthy"},
     }
     status = get_overall_status(components)
     assert status == "unhealthy"
-

@@ -6,10 +6,9 @@ import time
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy.orm import Session
 
 from app.core.api_key_manager import get_available_keys
-from app.core.provider_config import get_all_provider_configs, get_provider_config
+from app.core.provider_config import get_all_provider_configs
 from app.database.database import SessionLocal, engine
 from app.routing.config_loader import config_loader
 

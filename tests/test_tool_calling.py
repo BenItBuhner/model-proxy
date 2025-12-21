@@ -2,10 +2,14 @@
 Tests for tool calling functionality across OpenAI and Anthropic formats.
 Tests both streaming and non-streaming variants.
 """
+
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-from app.core.format_converters import openai_to_anthropic_request, anthropic_to_openai_request
+from app.core.format_converters import (
+    openai_to_anthropic_request,
+    anthropic_to_openai_request,
+)
 
 
 @pytest.fixture
@@ -23,21 +27,26 @@ class TestToolCalling:
         openai_request = {
             "model": "test-model",
             "messages": [{"role": "user", "content": "What's the weather?"}],
-            "tools": [{
-                "type": "function",
-                "function": {
-                    "name": "get_weather",
-                    "description": "Get weather information",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "location": {"type": "string", "description": "City name"}
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_weather",
+                        "description": "Get weather information",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "location": {
+                                    "type": "string",
+                                    "description": "City name",
+                                }
+                            },
+                            "required": ["location"],
                         },
-                        "required": ["location"]
-                    }
+                    },
                 }
-            }],
-            "max_tokens": 100
+            ],
+            "max_tokens": 100,
         }
 
         anthropic_request = openai_to_anthropic_request(openai_request)
@@ -55,18 +64,20 @@ class TestToolCalling:
         anthropic_request = {
             "model": "test-model",
             "messages": [{"role": "user", "content": "What's the weather?"}],
-            "tools": [{
-                "name": "get_weather",
-                "description": "Get weather information",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "location": {"type": "string", "description": "City name"}
+            "tools": [
+                {
+                    "name": "get_weather",
+                    "description": "Get weather information",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "location": {"type": "string", "description": "City name"}
+                        },
+                        "required": ["location"],
                     },
-                    "required": ["location"]
                 }
-            }],
-            "max_tokens": 100
+            ],
+            "max_tokens": 100,
         }
 
         openai_request = anthropic_to_openai_request(anthropic_request)
@@ -77,7 +88,9 @@ class TestToolCalling:
         assert tool["type"] == "function"
         assert tool["function"]["name"] == "get_weather"
         assert tool["function"]["description"] == "Get weather information"
-        assert tool["function"]["parameters"]["properties"]["location"]["type"] == "string"
+        assert (
+            tool["function"]["parameters"]["properties"]["location"]["type"] == "string"
+        )
 
     def test_openai_tool_calling_non_streaming(self, client):
         """Test OpenAI tool calling (non-streaming) with nahcrof/kimi-k2-turbo."""
@@ -87,36 +100,44 @@ class TestToolCalling:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant. When asked to perform mathematical addition, you MUST use the add_numbers tool. Do not calculate the result yourself - always use the tool."
+                    "content": "You are a helpful assistant. When asked to perform mathematical addition, you MUST use the add_numbers tool. Do not calculate the result yourself - always use the tool.",
                 },
                 {
                     "role": "user",
-                    "content": "What is 15 + 27? Please use the add_numbers tool to calculate this."
+                    "content": "What is 15 + 27? Please use the add_numbers tool to calculate this.",
+                },
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "add_numbers",
+                        "description": "Add two numbers together. This tool only performs addition and nothing else.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "a": {
+                                    "type": "number",
+                                    "description": "First number to add",
+                                },
+                                "b": {
+                                    "type": "number",
+                                    "description": "Second number to add",
+                                },
+                            },
+                            "required": ["a", "b"],
+                        },
+                    },
                 }
             ],
-            "tools": [{
-                "type": "function",
-                "function": {
-                    "name": "add_numbers",
-                    "description": "Add two numbers together. This tool only performs addition and nothing else.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "a": {"type": "number", "description": "First number to add"},
-                            "b": {"type": "number", "description": "Second number to add"}
-                        },
-                        "required": ["a", "b"]
-                    }
-                }
-            }],
             "tool_choice": "auto",
-            "max_tokens": 150
+            "max_tokens": 150,
         }
 
         response = client.post(
             "/v1/chat/completions",
             json=request_data,
-            headers={"Authorization": "Bearer test_client_key_123"}
+            headers={"Authorization": "Bearer test_client_key_123"},
         )
 
         # Should succeed (200) even if model doesn't actually call tools
@@ -133,7 +154,7 @@ class TestToolCalling:
         has_tool_calls = "tool_calls" in message and message["tool_calls"] is not None
 
         if has_tool_calls:
-            print(f"SUCCESS: Model generated actual tool calls!")
+            print("SUCCESS: Model generated actual tool calls!")
             tool_calls = message["tool_calls"]
             assert len(tool_calls) > 0
             tool_call = tool_calls[0]
@@ -142,6 +163,7 @@ class TestToolCalling:
 
             # Parse the arguments
             import json
+
             args = json.loads(tool_call["function"]["arguments"])
             print(f"Tool call arguments: {args}")
 
@@ -151,9 +173,14 @@ class TestToolCalling:
             assert args["b"] == 27
             print("SUCCESS: Tool call has correct arguments!")
         else:
-            print(f"WARNING: Model did not generate tool calls, responded with text: {message.get('content', '')[:100]}...")
+            print(
+                f"WARNING: Model did not generate tool calls, responded with text: {message.get('content', '')[:100]}..."
+            )
             # Content should be None when there are supposed to be tool calls
-            assert message.get("content") is None or len(message.get("content", "").strip()) == 0
+            assert (
+                message.get("content") is None
+                or len(message.get("content", "").strip()) == 0
+            )
 
     def test_openai_tool_calling_streaming(self, client):
         """Test OpenAI tool calling (streaming) with nahcrof/kimi-k2-turbo."""
@@ -162,37 +189,45 @@ class TestToolCalling:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant. When asked to perform mathematical addition, you MUST use the add_numbers tool. Do not calculate the result yourself - always use the tool."
+                    "content": "You are a helpful assistant. When asked to perform mathematical addition, you MUST use the add_numbers tool. Do not calculate the result yourself - always use the tool.",
                 },
                 {
                     "role": "user",
-                    "content": "What is 7 + 8? Please use the add_numbers tool to calculate this."
+                    "content": "What is 7 + 8? Please use the add_numbers tool to calculate this.",
+                },
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "add_numbers",
+                        "description": "Add two numbers together. This tool only performs addition and nothing else.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "a": {
+                                    "type": "number",
+                                    "description": "First number to add",
+                                },
+                                "b": {
+                                    "type": "number",
+                                    "description": "Second number to add",
+                                },
+                            },
+                            "required": ["a", "b"],
+                        },
+                    },
                 }
             ],
-            "tools": [{
-                "type": "function",
-                "function": {
-                    "name": "add_numbers",
-                    "description": "Add two numbers together. This tool only performs addition and nothing else.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "a": {"type": "number", "description": "First number to add"},
-                            "b": {"type": "number", "description": "Second number to add"}
-                        },
-                        "required": ["a", "b"]
-                    }
-                }
-            }],
             "tool_choice": "auto",
             "stream": True,
-            "max_tokens": 100
+            "max_tokens": 100,
         }
 
         response = client.post(
             "/v1/chat/completions-stream",
             json=request_data,
-            headers={"Authorization": "Bearer test_client_key_123"}
+            headers={"Authorization": "Bearer test_client_key_123"},
         )
 
         # Should succeed (200) with streaming response
@@ -207,7 +242,9 @@ class TestToolCalling:
         if has_tool_call_data:
             print("SUCCESS: Streaming response contains tool call data!")
         else:
-            print(f"WARNING: Streaming response does not contain tool calls: {content[:300]}...")
+            print(
+                f"WARNING: Streaming response does not contain tool calls: {content[:300]}..."
+            )
 
     def test_anthropic_tool_calling_non_streaming(self, client):
         """Test Anthropic tool calling (non-streaming) with nahcrof/kimi-k2-turbo."""
@@ -217,28 +254,36 @@ class TestToolCalling:
             "messages": [
                 {
                     "role": "user",
-                    "content": "You are a helpful assistant. When asked to perform mathematical addition, you MUST use the add_numbers tool. Do not calculate the result yourself - always use the tool.\n\nWhat is 12 + 34? Please use the add_numbers tool to calculate this."
+                    "content": "You are a helpful assistant. When asked to perform mathematical addition, you MUST use the add_numbers tool. Do not calculate the result yourself - always use the tool.\n\nWhat is 12 + 34? Please use the add_numbers tool to calculate this.",
                 }
             ],
-            "tools": [{
-                "name": "add_numbers",
-                "description": "Add two numbers together. This tool only performs addition and nothing else.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "a": {"type": "number", "description": "First number to add"},
-                        "b": {"type": "number", "description": "Second number to add"}
+            "tools": [
+                {
+                    "name": "add_numbers",
+                    "description": "Add two numbers together. This tool only performs addition and nothing else.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "a": {
+                                "type": "number",
+                                "description": "First number to add",
+                            },
+                            "b": {
+                                "type": "number",
+                                "description": "Second number to add",
+                            },
+                        },
+                        "required": ["a", "b"],
                     },
-                    "required": ["a", "b"]
                 }
-            }],
-            "max_tokens": 150
+            ],
+            "max_tokens": 150,
         }
 
         response = client.post(
             "/v1/messages",
             json=request_data,
-            headers={"Authorization": "Bearer test_client_key_123"}
+            headers={"Authorization": "Bearer test_client_key_123"},
         )
 
         # Should succeed (200) - Anthropic format conversion should work
@@ -258,7 +303,9 @@ class TestToolCalling:
 
         if has_tool_use:
             print("SUCCESS: Model generated actual tool_use content blocks!")
-            tool_blocks = [block for block in content_blocks if block.get("type") == "tool_use"]
+            tool_blocks = [
+                block for block in content_blocks if block.get("type") == "tool_use"
+            ]
             assert len(tool_blocks) > 0
             tool_block = tool_blocks[0]
             assert tool_block["name"] == "add_numbers"
@@ -272,9 +319,13 @@ class TestToolCalling:
             assert tool_input["b"] == 34
             print("SUCCESS: Tool call has correct arguments!")
         else:
-            print(f"WARNING: Model did not generate tool_use blocks, responded with: {str(content_blocks)[:200]}...")
+            print(
+                f"WARNING: Model did not generate tool_use blocks, responded with: {str(content_blocks)[:200]}..."
+            )
             # Should still have some text content
-            text_blocks = [block for block in content_blocks if block.get("type") == "text"]
+            text_blocks = [
+                block for block in content_blocks if block.get("type") == "text"
+            ]
             if text_blocks:
                 print(f"Text response: {text_blocks[0].get('text', '')[:100]}...")
 
@@ -285,29 +336,37 @@ class TestToolCalling:
             "messages": [
                 {
                     "role": "user",
-                    "content": "You are a helpful assistant. When asked to perform mathematical addition, you MUST use the add_numbers tool. Do not calculate the result yourself - always use the tool.\n\nWhat is 5 + 9? Please use the add_numbers tool to calculate this."
+                    "content": "You are a helpful assistant. When asked to perform mathematical addition, you MUST use the add_numbers tool. Do not calculate the result yourself - always use the tool.\n\nWhat is 5 + 9? Please use the add_numbers tool to calculate this.",
                 }
             ],
-            "tools": [{
-                "name": "add_numbers",
-                "description": "Add two numbers together. This tool only performs addition and nothing else.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "a": {"type": "number", "description": "First number to add"},
-                        "b": {"type": "number", "description": "Second number to add"}
+            "tools": [
+                {
+                    "name": "add_numbers",
+                    "description": "Add two numbers together. This tool only performs addition and nothing else.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "a": {
+                                "type": "number",
+                                "description": "First number to add",
+                            },
+                            "b": {
+                                "type": "number",
+                                "description": "Second number to add",
+                            },
+                        },
+                        "required": ["a", "b"],
                     },
-                    "required": ["a", "b"]
                 }
-            }],
+            ],
             "stream": True,
-            "max_tokens": 100
+            "max_tokens": 100,
         }
 
         response = client.post(
             "/v1/messages-stream",
             json=request_data,
-            headers={"Authorization": "Bearer test_client_key_123"}
+            headers={"Authorization": "Bearer test_client_key_123"},
         )
 
         # Should succeed (200) with streaming response
@@ -318,24 +377,33 @@ class TestToolCalling:
         assert len(content.strip()) > 0
 
         # Look for tool_use data in the stream
-        has_tool_use_data = '"type": "tool_use"' in content or 'tool_use' in content
+        has_tool_use_data = '"type": "tool_use"' in content or "tool_use" in content
         if has_tool_use_data:
             print("SUCCESS: Streaming response contains tool_use data!")
         else:
-            print(f"WARNING: Streaming response does not contain tool_use: {content[:300]}...")
+            print(
+                f"WARNING: Streaming response does not contain tool_use: {content[:300]}..."
+            )
 
     def test_tool_format_edge_cases(self):
         """Test edge cases in tool format conversion."""
         # Test empty tools
         openai_empty = {"model": "test", "messages": [], "tools": []}
         anthropic_empty = openai_to_anthropic_request(openai_empty)
-        assert "tools" not in anthropic_empty or len(anthropic_empty.get("tools", [])) == 0
+        assert (
+            "tools" not in anthropic_empty or len(anthropic_empty.get("tools", [])) == 0
+        )
 
         # Test tools without parameters
         openai_no_params = {
             "model": "test",
             "messages": [],
-            "tools": [{"type": "function", "function": {"name": "test", "description": "test"}}]
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {"name": "test", "description": "test"},
+                }
+            ],
         }
         anthropic_no_params = openai_to_anthropic_request(openai_no_params)
         assert anthropic_no_params["tools"][0]["input_schema"] == {}
@@ -344,8 +412,11 @@ class TestToolCalling:
         openai_malformed = {
             "model": "test",
             "messages": [],
-            "tools": [{"invalid": "structure"}]
+            "tools": [{"invalid": "structure"}],
         }
         anthropic_malformed = openai_to_anthropic_request(openai_malformed)
         # Should not crash, might skip malformed tools
-        assert "tools" not in anthropic_malformed or len(anthropic_malformed.get("tools", [])) == 0
+        assert (
+            "tools" not in anthropic_malformed
+            or len(anthropic_malformed.get("tools", [])) == 0
+        )

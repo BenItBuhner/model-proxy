@@ -3,9 +3,9 @@ API Key Manager for handling multiple API keys per provider with fallback.
 Parses environment variables and manages key rotation with circuit breaker pattern.
 Uses provider configuration for environment variable patterns.
 """
+
 import os
 import random
-import time
 from typing import Dict, List, Optional
 from collections import defaultdict
 from app.core.provider_config import get_provider_env_var_patterns
@@ -22,30 +22,27 @@ def _parse_provider_keys(provider_name: str) -> List[str]:
     Parse environment variables for a provider's API keys.
     Uses provider configuration to determine env var patterns.
     Falls back to default pattern if config not available.
-    
+
     Args:
         provider_name: Provider name (e.g., "openai", "anthropic")
-        
+
     Returns:
         List of API keys found
     """
     keys = []
-    
+
     # Try to get patterns from provider config
     try:
         patterns = get_provider_env_var_patterns(provider_name)
     except Exception:
         # Fallback to default pattern if config not available
         patterns = []
-    
+
     # If no patterns from config, use default pattern
     if not patterns:
         env_prefix = provider_name.upper().replace("-", "_")
-        patterns = [
-            f"{env_prefix}_API_KEY",
-            f"{env_prefix}_API_KEY_{{INDEX}}"
-        ]
-    
+        patterns = [f"{env_prefix}_API_KEY", f"{env_prefix}_API_KEY_{{INDEX}}"]
+
     # Parse keys based on patterns
     for pattern in patterns:
         if "{INDEX}" in pattern:
@@ -64,7 +61,7 @@ def _parse_provider_keys(provider_name: str) -> List[str]:
             key = os.getenv(pattern)
             if key:
                 keys.append(key)
-    
+
     return keys
 
 
@@ -79,17 +76,17 @@ def get_available_keys(provider: str) -> List[str]:
 def get_api_key(provider: str) -> Optional[str]:
     """
     Get an available API key for a provider (random selection).
-    
+
     Args:
         provider: Provider name
-        
+
     Returns:
         API key string, or None if no keys available
     """
     available_keys = get_available_keys(provider)
     if not available_keys:
         return None
-    
+
     return random.choice(available_keys)
 
 
@@ -103,10 +100,10 @@ def mark_key_failed(provider: str, key: str) -> None:
 def get_all_keys(provider: str) -> List[str]:
     """
     Get all keys for a provider (including failed ones).
-    
+
     Args:
         provider: Provider name
-        
+
     Returns:
         List of all API keys
     """
@@ -117,7 +114,7 @@ def reset_failed_keys(provider: Optional[str] = None) -> None:
     """
     Reset failed keys for a provider (or all providers if None).
     Useful for testing or manual recovery.
-    
+
     Args:
         provider: Provider name, or None to reset all
     """
@@ -125,4 +122,3 @@ def reset_failed_keys(provider: Optional[str] = None) -> None:
         _failed_keys[provider].clear()
     else:
         _failed_keys.clear()
-

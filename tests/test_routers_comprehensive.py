@@ -2,10 +2,9 @@
 Comprehensive integration tests for router endpoints with advanced scenarios.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture

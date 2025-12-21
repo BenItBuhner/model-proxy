@@ -4,7 +4,6 @@ Tests for provider implementations.
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 
 from app.providers.anthropic_provider import AnthropicProvider

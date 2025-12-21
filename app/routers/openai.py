@@ -13,7 +13,7 @@ This router implements the OpenAI Chat Completions API format and handles:
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -21,7 +21,6 @@ from sqlalchemy.orm import Session
 
 from app.auth import CLIENT_API_KEY, verify_client_api_key
 from app.core.error_formatters import (
-    create_provider_error_response,
     format_openai_error,
 )
 from app.core.logging import (
@@ -204,12 +203,11 @@ async def chat_completions(
     request_id = getattr(http_request.state, "request_id", None)
     start_time = getattr(http_request.state, "start_time", time.time())
     client_api_key_hash = hash_api_key(CLIENT_API_KEY) if CLIENT_API_KEY else None
-    request_payload: Optional[Dict[str, Any]] = None
 
     try:
         # Check if this model uses the fallback routing system
         try:
-            routing_config = config_loader.load_config(request.model)
+            config_loader.load_config(request.model)
             logical_model = request.model
         except (FileNotFoundError, ValueError) as e:
             logger.warning(f"No routing config found for model '{request.model}': {e}")
@@ -225,7 +223,7 @@ async def chat_completions(
 
         # Prepare request dict
         request_dict = request.model_dump(exclude_none=True)
-        request_payload = request_dict.copy()
+        request_dict.copy()
         is_stream = bool(request_dict.get("stream", False))
 
         # Extract parameters for logging
@@ -387,7 +385,7 @@ async def chat_completions_stream(
     try:
         # Check if this model uses the fallback routing system
         try:
-            routing_config = config_loader.load_config(request.model)
+            config_loader.load_config(request.model)
             logical_model = request.model
         except (FileNotFoundError, ValueError) as e:
             logger.warning(f"No routing config found for model '{request.model}': {e}")

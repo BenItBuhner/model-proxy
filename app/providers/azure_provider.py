@@ -4,7 +4,6 @@ Handles Azure AI and GitHub Models providers.
 Enhanced with route configuration support for fallback routing.
 """
 
-import os
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
@@ -333,7 +332,7 @@ class AzureProvider(BaseProvider):
                         yield "data: [DONE]\n\n"
                         return
 
-                except Exception as stream_err:
+                except Exception:
                     # Fallback: non-streaming call, convert to simulated stream
                     params_non_stream = dict(params)
                     params_non_stream["stream"] = False
