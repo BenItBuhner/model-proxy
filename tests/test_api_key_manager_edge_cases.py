@@ -47,15 +47,15 @@ def test_parse_provider_keys_mixed(monkeypatch):
 
 
 def test_parse_provider_keys_gaps(monkeypatch):
-    """Test parsing with gaps in numbering (stops at first gap)."""
+    """Test parsing with gaps in numbering (still discovers higher indexes)."""
     monkeypatch.setenv("OPENAI_API_KEY_1", "key1")
     monkeypatch.setenv("OPENAI_API_KEY_3", "key3")
-    # Missing key_2 - parsing stops at first gap
+    # Missing key_2 - parsing should still find key_3
 
     keys = _parse_provider_keys("openai")
     assert "key1" in keys
-    # key3 won't be found because parsing stops at gap
-    assert len(keys) == 1
+    assert "key3" in keys
+    assert len(keys) == 2
 
 
 def test_get_available_keys_after_failure(monkeypatch):

@@ -8,7 +8,8 @@ load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.provider_config import get_all_provider_configs
+from app.core.api_key_manager import get_available_keys
+from app.core.provider_config import get_all_provider_configs, is_provider_enabled
 from app.core.startup_validation import validate_startup
 from app.database import logging_models, models
 from app.database.database import engine
@@ -24,10 +25,30 @@ models.Base.metadata.create_all(bind=engine)
 logging_models.Base.metadata.create_all(bind=engine)
 
 # Load provider configurations at startup
+provider_configs = {}
 try:
-    get_all_provider_configs()
+    provider_configs = get_all_provider_configs()
 except Exception as e:
     print(f"Warning: Failed to load some provider configs: {e}")
+    provider_configs = {}
+
+# Print provider key counts before startup validation
+if provider_configs:
+    printed = False
+    for provider_name in sorted(provider_configs.keys()):
+        if not is_provider_enabled(provider_name):
+            continue
+        key_count = len(get_available_keys(provider_name))
+        if key_count == 0:
+            continue
+        if not printed:
+            print("Provider API keys:")
+            printed = True
+        print(f"- {provider_name}: {key_count}")
+    if not printed:
+        print("Provider API keys: none configured")
+else:
+    print("Provider API keys: no provider configs loaded")
 
 # Perform startup validation
 try:

@@ -16,8 +16,12 @@ class RouteConfig(BaseModel):
         default=None,
         description="Optional identifier for this route (e.g., 'primary', 'secondary')",
     )
-    wire_protocol: Literal["openai", "anthropic"] = Field(
-        ..., description="API protocol this route uses"
+    wire_protocol: Optional[Literal["openai", "anthropic"]] = Field(
+        default=None,
+        description=(
+            "API protocol this route uses. Defaults to provider-compatible format "
+            "when omitted."
+        ),
     )
     provider: str = Field(
         ..., description="Provider name (e.g., 'cerebras', 'nahcrof', 'openai')"
@@ -26,9 +30,12 @@ class RouteConfig(BaseModel):
     base_url: Optional[str] = Field(
         default=None, description="Override base URL for this provider"
     )
-    api_key_env: List[str] = Field(
-        ...,
-        description="Ordered list of environment variable names to try for API keys",
+    api_key_env: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Ordered list of environment variable names to try for API keys. "
+            "If omitted, provider key patterns are used."
+        ),
     )
     timeout_seconds: Optional[int] = Field(
         default=None, description="Timeout for this specific route"

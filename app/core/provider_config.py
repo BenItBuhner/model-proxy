@@ -263,6 +263,33 @@ def get_provider_env_var_patterns(provider_name: str) -> List[str]:
     return resolved_patterns
 
 
+def get_provider_wire_protocol(provider_name: str) -> str:
+    """
+    Resolve the default wire protocol for a provider.
+
+    Uses the provider's endpoints.compatible_format and maps it to a routing
+    wire protocol ("openai" or "anthropic"). Non-matching formats default
+    to "openai" for routing.
+    """
+    config = get_provider_config(provider_name)
+    if not config:
+        return "openai"
+
+    endpoints = config.get("endpoints", {})
+    compatible_format = endpoints.get("compatible_format")
+    if not compatible_format:
+        return "openai"
+
+    normalized = str(compatible_format).strip().lower()
+    mapping = {
+        "openai": "openai",
+        "anthropic": "anthropic",
+        "azure": "openai",
+        "native": "openai",
+    }
+    return mapping.get(normalized, "openai")
+
+
 def is_provider_enabled(provider_name: str) -> bool:
     """
     Check if a provider is enabled.

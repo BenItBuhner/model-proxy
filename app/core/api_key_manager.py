@@ -6,8 +6,10 @@ Uses provider configuration for environment variable patterns.
 
 import os
 import random
-from typing import Dict, List, Optional
+import re
 from collections import defaultdict
+from typing import Dict, List, Optional, Tuple
+
 from app.core.provider_config import get_provider_env_var_patterns
 
 # Failed keys tracking: {provider: {key: failure_timestamp}}
@@ -29,7 +31,8 @@ def _parse_provider_keys(provider_name: str) -> List[str]:
     Returns:
         List of API keys found
     """
-    keys = []
+    keys: List[str] = []
+    seen = set()
 
     # Try to get patterns from provider config
     try:
@@ -43,24 +46,37 @@ def _parse_provider_keys(provider_name: str) -> List[str]:
         env_prefix = provider_name.upper().replace("-", "_")
         patterns = [f"{env_prefix}_API_KEY", f"{env_prefix}_API_KEY_{{INDEX}}"]
 
+    def _add_key(value: Optional[str]) -> None:
+        if value and value not in seen:
+            keys.append(value)
+            seen.add(value)
+
+    def _collect_indexed(pattern_with_index: str) -> List[Tuple[int, str]]:
+        escaped = re.escape(pattern_with_index)
+        modified = escaped.replace(r"\{INDEX\}", r"(\d+)")
+        regex = re.compile(rf"^{modified}$")
+        matches: List[Tuple[int, str]] = []
+        for env_var, value in os.environ.items():
+            match = regex.match(env_var)
+            if not match:
+                continue
+            try:
+                index = int(match.group(1))
+            except ValueError:
+                continue
+            matches.append((index, value))
+        matches.sort(key=lambda item: item[0])
+        return matches
+
     # Parse keys based on patterns
     for pattern in patterns:
         if "{INDEX}" in pattern:
             # Pattern with index placeholder (e.g., OPENAI_API_KEY_{INDEX})
-            base_pattern = pattern.replace("{INDEX}", "")
-            index = 1
-            while True:
-                env_var = f"{base_pattern}{index}"
-                key = os.getenv(env_var)
-                if not key:
-                    break
-                keys.append(key)
-                index += 1
+            for _, value in _collect_indexed(pattern):
+                _add_key(value)
         else:
             # Simple pattern without index (e.g., OPENAI_API_KEY)
-            key = os.getenv(pattern)
-            if key:
-                keys.append(key)
+            _add_key(os.getenv(pattern))
 
     return keys
 

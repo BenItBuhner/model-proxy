@@ -77,7 +77,7 @@ Each provider config includes:
 
 ### Model Configuration
 
-To add a new model, create a JSON file in `config/models/` named `<logical_model>.json` with the routing configuration. Models are defined as individual routing configuration files under `config/models/`. Each logical model has its own JSON file named `<logical_model>.json` that describes routing (primary provider, fallbacks, api key env vars, timeouts, and wire-protocol).
+To add a new model, create a JSON file in `config/models/` named `<logical_model>.json` with the routing configuration. Models are defined as individual routing configuration files under `config/models/`. Each logical model has its own JSON file named `<logical_model>.json` that describes routing (primary provider, fallbacks, timeouts, and optional overrides for API keys or wire protocol).
 
 Example `config/models/gpt-5-2.json` (simplified):
 
@@ -88,17 +88,13 @@ Example `config/models/gpt-5-2.json` (simplified):
   "model_routings": [
     {
       "id": "primary",
-      "wire_protocol": "openai",
       "provider": "openai",
-      "model": "gpt-5.2",
-      "api_key_env": ["OPENAI_API_KEY", "OPENAI_API_KEY_1"]
+      "model": "gpt-5.2"
     },
     {
       "id": "secondary",
-      "wire_protocol": "openai",
       "provider": "azure",
-      "model": "gpt-5.2",
-      "api_key_env": ["AZURE_API_KEY"]
+      "model": "gpt-5.2"
     }
   ],
   "fallback_model_routings": ["gpt-5.1"]
@@ -108,6 +104,7 @@ Example `config/models/gpt-5-2.json` (simplified):
 Notes:
 - The new routing system reads per-model JSON files in `config/models/` using `app.routing.config_loader.ModelConfigLoader`.
 - Use `config_loader.get_available_models()` to list logical models programmatically.
+- `wire_protocol` and `api_key_env` are optional per-route overrides. If omitted, the provider config determines the wire protocol and API key env var patterns.
 - If you previously used a single `config/models.json` (the legacy flat mapping), you should migrate to per-model files by creating one JSON file per logical model in `config/models/`. A migration script can be added to automate splitting the flat mapping into per-model files; otherwise create files by hand using the example above.
 
 ## Running the Application

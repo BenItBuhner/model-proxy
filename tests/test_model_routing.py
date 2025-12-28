@@ -80,17 +80,31 @@ class TestModelRoutingConfig:
             "logical_name": "test-model",
             "model_routings": [
                 {
-                    "wire_protocol": "openai",
                     "provider": "custom",
                     "model": "custom-model",
                     "base_url": "https://custom.api.com/v1",
-                    "api_key_env": ["CUSTOM_KEY"],
                 }
             ],
         }
 
         config = ModelRoutingConfig(**config_data)
         assert config.model_routings[0].base_url == "https://custom.api.com/v1"
+
+    def test_config_with_optional_fields(self):
+        """Test config when wire protocol and api keys are omitted."""
+        config_data = {
+            "logical_name": "test-model",
+            "model_routings": [
+                {
+                    "provider": "cerebras",
+                    "model": "model-a",
+                }
+            ],
+        }
+
+        config = ModelRoutingConfig(**config_data)
+        assert config.model_routings[0].wire_protocol is None
+        assert config.model_routings[0].api_key_env is None
 
     def test_config_validation_missing_required(self):
         """Test config validation for missing required fields."""
@@ -110,15 +124,15 @@ class TestModelRoutingConfig:
     def test_route_config_defaults(self):
         """Test RouteConfig default values."""
         route = RouteConfig(
-            wire_protocol="openai",
             provider="test",
             model="test-model",
-            api_key_env=["KEY"],
         )
 
         assert route.id is None
         assert route.base_url is None
         assert route.timeout_seconds is None
+        assert route.wire_protocol is None
+        assert route.api_key_env is None
 
 
 class TestResolvedRoute:
@@ -522,6 +536,32 @@ class TestFallbackRouter:
 
         assert attempts[1].route.provider == "cerebras"
         assert attempts[1].route.api_key == "cerebras_key_2"
+
+    def test_resolve_attempts_uses_provider_defaults(self):
+        """Test that provider-derived keys and protocol are used when omitted."""
+        router = FallbackRouter()
+        config = ModelRoutingConfig(
+            logical_name="model-x",
+            model_routings=[
+                RouteConfig(
+                    provider="cerebras",
+                    model="model-x",
+                )
+            ],
+        )
+
+        with patch(
+            "app.routing.router.config_loader.load_config", return_value=config
+        ), patch(
+            "app.routing.router.get_available_keys", return_value=["key1", "key2"]
+        ), patch(
+            "app.routing.router.get_provider_wire_protocol", return_value="openai"
+        ):
+            attempts = router.resolve_attempts("model-x")
+
+        assert len(attempts) == 2
+        assert attempts[0].route.api_key == "key1"
+        assert attempts[0].route.wire_protocol == "openai"
 
     def test_resolve_attempts_includes_fallbacks(self, mock_config_loader):
         """Test that fallback logical models are included."""

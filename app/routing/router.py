@@ -11,6 +11,8 @@ from typing import Any, AsyncGenerator, Callable, Dict, List, Literal, Optional
 
 import aiohttp
 
+from app.core.api_key_manager import get_available_keys
+from app.core.provider_config import get_provider_wire_protocol
 from app.routing.config_loader import config_loader
 from app.routing.executor import RouteExecutionError, RouteExecutor, get_executor
 from app.routing.models import Attempt, ResolvedRoute, RoutingError
@@ -335,16 +337,25 @@ class FallbackRouter:
         attempts = []
         attempt_offset = 0
 
-        for api_key_env in route_config.api_key_env:
-            # Try to get the API key from environment
-            api_key = os.getenv(api_key_env)
-            if not api_key:
-                logger.debug(f"API key not found in env var: {api_key_env}")
-                continue
+        wire_protocol = route_config.wire_protocol or get_provider_wire_protocol(
+            route_config.provider
+        )
 
+        if route_config.api_key_env:
+            api_keys = []
+            for api_key_env in route_config.api_key_env:
+                api_key = os.getenv(api_key_env)
+                if not api_key:
+                    logger.debug(f"API key not found in env var: {api_key_env}")
+                    continue
+                api_keys.append(api_key)
+        else:
+            api_keys = get_available_keys(route_config.provider)
+
+        for api_key in api_keys:
             resolved_route = ResolvedRoute(
                 source_logical_model=source_logical_model,
-                wire_protocol=route_config.wire_protocol,
+                wire_protocol=wire_protocol,
                 provider=route_config.provider,
                 model=route_config.model,
                 base_url=route_config.base_url,
