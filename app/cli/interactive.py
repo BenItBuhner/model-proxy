@@ -357,7 +357,7 @@ def choose_from_list_searchable(
 ) -> Union[str, List[str], None]:
     """
     Let user search/filter a list in real-time as they type.
-    
+
     Shows a text field at the top for searching, with a scrollable list below
     that filters in real-time as the user types. The user can navigate with
     arrow keys and select items.
@@ -377,11 +377,11 @@ def choose_from_list_searchable(
     if not choices:
         display_warning("No choices available")
         raise UserCancelled()
-    
+
     # If list is small, skip search and go straight to selection
     if len(choices) <= 20:
         return choose_from_list(message, choices, allow_multiple=allow_multiple)
-    
+
     try:
         # State for filtering and selection
         search_buffer = Buffer()
@@ -390,49 +390,49 @@ def choose_from_list_searchable(
         filtered_choices = [choices.copy()]  # Use list to allow mutation
         result = [None]  # Store result
         cancelled = [False]
-        
+
         def get_filtered():
             """Get filtered choices based on search text."""
             search_text = search_buffer.text.strip().lower()
             if not search_text:
                 return choices.copy()
             return [c for c in choices if search_text in c.lower()]
-        
+
         def update_filter():
             """Update filtered list and reset index if needed."""
             filtered_choices[0] = get_filtered()
             if current_index[0] >= len(filtered_choices[0]):
                 current_index[0] = max(0, len(filtered_choices[0]) - 1)
-        
+
         def get_list_text():
             """Generate the formatted text for the list display."""
             update_filter()
             lines = []
             fc = filtered_choices[0]
-            
+
             if not fc:
                 return FormattedText([("class:warning", "  No matches found")])
-            
+
             # Show up to 15 items around current index
             max_visible = 15
             start = max(0, current_index[0] - max_visible // 2)
             end = min(len(fc), start + max_visible)
             if end - start < max_visible and start > 0:
                 start = max(0, end - max_visible)
-            
+
             for i in range(start, end):
                 item = fc[i]
                 is_selected = item in selected_items
                 is_current = i == current_index[0]
-                
+
                 # Build prefix
                 if allow_multiple:
                     checkbox = "[*] " if is_selected else "[ ] "
                 else:
                     checkbox = ""
-                
+
                 pointer = "> " if is_current else "  "
-                
+
                 # Style based on state
                 if is_current and is_selected:
                     style = "class:selected-current"
@@ -449,47 +449,51 @@ def choose_from_list_searchable(
                 else:
                     line_text = f"{pointer}{checkbox}{item}"
                     lines.append(("", line_text))
-                
+
                 lines.append(("", "\n"))
-            
+
             # Add scroll indicator if needed
             if start > 0:
-                lines.insert(0, ("class:scroll-indicator", f"  ... {start} more above ...\n"))
+                lines.insert(
+                    0, ("class:scroll-indicator", f"  ... {start} more above ...\n")
+                )
             if end < len(fc):
-                lines.append(("class:scroll-indicator", f"  ... {len(fc) - end} more below ..."))
-            
+                lines.append(
+                    ("class:scroll-indicator", f"  ... {len(fc) - end} more below ...")
+                )
+
             return FormattedText(lines)
-        
+
         def get_status_text():
             """Generate status line text."""
             fc = filtered_choices[0]
             search_text = search_buffer.text.strip()
-            
+
             if search_text:
                 status = f"Showing {len(fc)} of {len(choices)} {search_placeholder}"
             else:
                 status = f"Showing all {len(choices)} {search_placeholder}"
-            
+
             if allow_multiple and selected_items:
                 status += f" | {len(selected_items)} selected"
-            
+
             return status
-        
+
         # Key bindings
         kb = KeyBindings()
-        
+
         @kb.add("c-c")
         @kb.add("escape")
         def handle_cancel(event):
             cancelled[0] = True
             event.app.exit()
-        
+
         @kb.add("enter")
         def handle_enter(event):
             fc = filtered_choices[0]
             if not fc:
                 return
-            
+
             if allow_multiple:
                 # Return all selected items
                 result[0] = list(selected_items)
@@ -498,18 +502,18 @@ def choose_from_list_searchable(
                 if 0 <= current_index[0] < len(fc):
                     result[0] = fc[current_index[0]]
             event.app.exit()
-        
+
         @kb.add("up")
         def handle_up(event):
             if current_index[0] > 0:
                 current_index[0] -= 1
-        
+
         @kb.add("down")
         def handle_down(event):
             fc = filtered_choices[0]
             if current_index[0] < len(fc) - 1:
                 current_index[0] += 1
-        
+
         @kb.add("space")
         def handle_space(event):
             if not allow_multiple:
@@ -521,80 +525,86 @@ def choose_from_list_searchable(
                     selected_items.remove(item)
                 else:
                     selected_items.add(item)
-        
+
         @kb.add("tab")
         def handle_tab(event):
             # Move focus or select
             if allow_multiple:
                 handle_space(event)
             handle_down(event)
-        
+
         # Create layout
         header_text = f"{message}\n"
         if allow_multiple:
             header_text += "Type to filter | Up/Down to navigate | Space to select | Enter to confirm | Esc to cancel"
         else:
-            header_text += "Type to filter | Up/Down to navigate | Enter to select | Esc to cancel"
-        
+            header_text += (
+                "Type to filter | Up/Down to navigate | Enter to select | Esc to cancel"
+            )
+
         search_window = Window(
             BufferControl(buffer=search_buffer),
             height=1,
         )
-        
+
         list_window = Window(
             FormattedTextControl(text=get_list_text),
             height=17,  # Show ~15 items + scroll indicators
         )
-        
+
         status_window = Window(
             FormattedTextControl(text=get_status_text),
             height=1,
         )
-        
+
         layout = Layout(
-            HSplit([
-                Window(FormattedTextControl(text=header_text), height=2),
-                Window(FormattedTextControl(text="Search: "), height=1),
-                search_window,
-                Window(FormattedTextControl(text="-" * 50), height=1),
-                list_window,
-                Window(FormattedTextControl(text="-" * 50), height=1),
-                status_window,
-            ])
+            HSplit(
+                [
+                    Window(FormattedTextControl(text=header_text), height=2),
+                    Window(FormattedTextControl(text="Search: "), height=1),
+                    search_window,
+                    Window(FormattedTextControl(text="-" * 50), height=1),
+                    list_window,
+                    Window(FormattedTextControl(text="-" * 50), height=1),
+                    status_window,
+                ]
+            )
         )
-        
+
         # Custom style
-        style = questionary.Style([
-            ("current", "reverse bold"),
-            ("selected", "fg:green"),
-            ("selected-current", "fg:green reverse bold"),
-            ("scroll-indicator", "fg:gray italic"),
-            ("warning", "fg:yellow"),
-        ])
-        
+        style = questionary.Style(
+            [
+                ("current", "reverse bold"),
+                ("selected", "fg:green"),
+                ("selected-current", "fg:green reverse bold"),
+                ("scroll-indicator", "fg:gray italic"),
+                ("warning", "fg:yellow"),
+            ]
+        )
+
         app = Application(
             layout=layout,
             key_bindings=kb,
             full_screen=False,
             style=style,
         )
-        
+
         # Focus on search buffer
         app.layout.focus(search_window)
-        
+
         # Run the app
         app.run()
-        
+
         if cancelled[0]:
             raise UserCancelled()
-        
+
         if result[0] is None:
             if allow_multiple:
                 return []
             raise UserCancelled()
-        
+
         return result[0]
-    
+
     except KeyboardInterrupt:
         raise UserCancelled()
 

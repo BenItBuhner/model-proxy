@@ -290,7 +290,9 @@ class TestAddModelCommand:
             if cache_file.exists():
                 with open(cache_file) as f:
                     cache = json.load(f)
-                    assert unique_model in cache.get("custom_models", {}).get("openai", [])
+                    assert unique_model in cache.get("custom_models", {}).get(
+                        "openai", []
+                    )
         finally:
             # Clean up: remove the test model from cache
             try:

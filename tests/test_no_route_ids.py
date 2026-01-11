@@ -3,7 +3,6 @@ Test suite to verify that the routing system works correctly without route IDs.
 This ensures that the simplification of schemas by removing IDs doesn't break functionality.
 """
 
-
 from app.routing.config_loader import config_loader
 from app.routing.models import ModelRoutingConfig, ResolvedRoute, RouteConfig
 

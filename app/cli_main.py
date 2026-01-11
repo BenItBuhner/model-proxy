@@ -879,7 +879,6 @@ def db_reset(
             raise typer.Exit(0)
 
     try:
-
         from app.database import logging_models, models
         from app.database.database import engine
 

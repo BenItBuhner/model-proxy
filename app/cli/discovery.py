@@ -34,7 +34,9 @@ class ModelDiscovery:
     - Custom endpoints
     """
 
-    def __init__(self, config_manager: ConfigManager, timeout: int = 30, quiet: bool = False):
+    def __init__(
+        self, config_manager: ConfigManager, timeout: int = 30, quiet: bool = False
+    ):
         """
         Initialize the model discovery service.
 
@@ -88,7 +90,9 @@ class ModelDiscovery:
                 models = await task
                 if models:
                     results[provider_name] = models
-                    self._success(f"Discovered {len(models)} models from {provider_name}")
+                    self._success(
+                        f"Discovered {len(models)} models from {provider_name}"
+                    )
             except Exception as e:
                 self._error(f"Failed to discover models from {provider_name}: {e}")
 
@@ -126,7 +130,9 @@ class ModelDiscovery:
         # Get API key and auth headers for this provider
         api_key = get_api_key(provider_name)
         if not api_key:
-            self._warning(f"No API key configured for {provider_name}, skipping discovery")
+            self._warning(
+                f"No API key configured for {provider_name}, skipping discovery"
+            )
             return []
 
         try:
@@ -284,6 +290,8 @@ async def discover_and_cache_models(*, quiet: bool = False) -> None:
         config_manager.update_models_cache(cache)
 
         if not quiet:
-            display_success(f"Model cache updated with {len(models_by_provider)} provider(s)")
+            display_success(
+                f"Model cache updated with {len(models_by_provider)} provider(s)"
+            )
     finally:
         await discovery.close()

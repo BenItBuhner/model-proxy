@@ -22,23 +22,23 @@ from app.cli.interactive import (
 def format_model_config_preview(model_config: Dict) -> str:
     """
     Format model configuration dictionary into a clean, readable list format.
-    
+
     Args:
         model_config: Dictionary containing model configuration
-        
+
     Returns:
         Formatted string representation of the configuration
     """
     lines = []
-    
+
     # Logical name
     logical_name = model_config.get("logical_name", "N/A")
     lines.append(f"Logical Name: {logical_name}")
-    
+
     # Timeout
     timeout = model_config.get("timeout_seconds", "N/A")
     lines.append(f"Timeout: {timeout} seconds")
-    
+
     # Primary model routings
     model_routings = model_config.get("model_routings", [])
     if model_routings:
@@ -49,7 +49,7 @@ def format_model_config_preview(model_config: Dict) -> str:
             lines.append(f"  {i}. {provider} / {model}")
     else:
         lines.append("\nPrimary Models: None")
-    
+
     # Fallback logical models (schema: List[str])
     fallback_models = model_config.get("fallback_model_routings", [])
     if isinstance(fallback_models, list) and fallback_models:
@@ -64,7 +64,7 @@ def format_model_config_preview(model_config: Dict) -> str:
                 lines.append(f"  {i}. {item}")
     else:
         lines.append("\nFallback Logical Models: None")
-    
+
     return "\n".join(lines)
 
 
@@ -120,7 +120,9 @@ def _prompt_ordered_fallback_models(existing_models: List[str]) -> List[str]:
     if not existing_models:
         return []
 
-    if not ask_yes_no("Add fallback logical models (tried if all routes fail)?", default=False):
+    if not ask_yes_no(
+        "Add fallback logical models (tried if all routes fail)?", default=False
+    ):
         return []
 
     remaining = sorted(existing_models)
@@ -172,7 +174,9 @@ def _configure_and_save_model_config(
 
     print("\nYou can:")
     print("  - Create a new logical model with these routes")
-    print("  - Add these routes to an existing logical model (as additional fallback routes)")
+    print(
+        "  - Add these routes to an existing logical model (as additional fallback routes)"
+    )
 
     config_type = choose_from_list(
         "Configuration type:",
@@ -187,7 +191,9 @@ def _configure_and_save_model_config(
         logical_name = ask_text(
             "Logical model name:",
             default=default_logical_name or "",
-            validator=lambda x: True if x and x.strip() else "Model name cannot be empty",
+            validator=lambda x: True
+            if x and x.strip()
+            else "Model name cannot be empty",
         )
 
         timeout = ask_text(
@@ -311,36 +317,36 @@ def _configure_and_save_model_config(
 def _get_all_models_with_providers(config_manager: ConfigManager) -> List[tuple]:
     """
     Get all available models from all providers.
-    
+
     Returns:
         List of (display_string, provider, model) tuples
     """
     cache = config_manager.get_models_cache()
     discovered = cache.get("discovered_models", {})
     custom = cache.get("custom_models", {})
-    
+
     all_provider_names = set(discovered.keys()) | set(custom.keys())
-    
+
     results = []
     for provider in sorted(all_provider_names):
         provider_discovered = discovered.get(provider, [])
         provider_custom = custom.get(provider, [])
         provider_models = sorted(set(provider_discovered + provider_custom))
-        
+
         for model in provider_models:
             display = f"{provider} / {model}"
             results.append((display, provider, model))
-    
+
     return results
 
 
 def _parse_model_selection(selection: str) -> tuple:
     """
     Parse a 'provider / model' string back to (provider, model) tuple.
-    
+
     Args:
         selection: String in format "provider / model"
-        
+
     Returns:
         (provider, model) tuple
     """
@@ -361,7 +367,7 @@ def _add_model_interactive_loop(config_manager: ConfigManager) -> None:
 
         # Step 2: Get all available models from ALL providers
         all_models_data = _get_all_models_with_providers(config_manager)
-        
+
         if not all_models_data:
             display_warning("No models available from any provider")
             print("\nOptions:")
@@ -379,7 +385,9 @@ def _add_model_interactive_loop(config_manager: ConfigManager) -> None:
                     context="Select provider for custom model"
                 )
                 model_id = ask_text("Enter model ID/name as used by the API:")
-                all_models_data = [(f"{provider_choice} / {model_id}", provider_choice, model_id)]
+                all_models_data = [
+                    (f"{provider_choice} / {model_id}", provider_choice, model_id)
+                ]
             elif action == "Refresh model cache":
                 if ask_yes_no(
                     "This will attempt to fetch models from provider API. Continue?",
@@ -401,10 +409,14 @@ def _add_model_interactive_loop(config_manager: ConfigManager) -> None:
 
         # Step 3: Select models from combined list (all providers)
         display_strings = [item[0] for item in all_models_data]
-        
+
         display_header("Model Selection")
-        print("Select models from any provider. Models are shown as 'provider / model'.")
-        print("Pick one model at a time (Enter to add). You can keep adding until you're done.\n")
+        print(
+            "Select models from any provider. Models are shown as 'provider / model'."
+        )
+        print(
+            "Pick one model at a time (Enter to add). You can keep adding until you're done.\n"
+        )
 
         selected_display: List[str] = []
         remaining_choices = display_strings.copy()
@@ -450,7 +462,7 @@ def _add_model_interactive_loop(config_manager: ConfigManager) -> None:
         if not selected_display:
             display_warning("No models selected")
             continue
-        
+
         # Parse selections back to (provider, model) tuples
         selected_routings = []
         for display in selected_display:
@@ -502,7 +514,7 @@ def _add_custom_model_interactive_loop(config_manager: ConfigManager) -> None:
     # the user is experimenting and cancels before saving a model config.
     pending_cache_additions: List[Tuple[str, str]] = []
     pending_cache_set = set()
-    
+
     while True:
         # Step 1: Display existing custom models
         cache = config_manager.get_models_cache()
@@ -519,7 +531,7 @@ def _add_custom_model_interactive_loop(config_manager: ConfigManager) -> None:
 
         if not has_custom:
             print("  No custom models configured")
-        
+
         # Show models selected this session
         if session_routings:
             print(f"\n  Selected this session: {len(session_routings)}")
@@ -569,7 +581,9 @@ def _add_custom_model_interactive_loop(config_manager: ConfigManager) -> None:
             if key not in pending_cache_set:
                 pending_cache_set.add(key)
                 pending_cache_additions.append(key)
-            display_info(f"Staged for cache (will only be saved if you finish): {provider_choice} / {model_id}")
+            display_info(
+                f"Staged for cache (will only be saved if you finish): {provider_choice} / {model_id}"
+            )
 
         # Always show what will be usable in routing config this session
         display_info(f"Selected for config: {provider_choice} / {model_id}")
@@ -598,7 +612,9 @@ def _add_custom_model_interactive_loop(config_manager: ConfigManager) -> None:
                 config_manager, session_routings
             )
         except UserCancelled:
-            display_warning("Configuration cancelled. No model configuration was saved.")
+            display_warning(
+                "Configuration cancelled. No model configuration was saved."
+            )
             saved_config = False
 
     # Step 7: Persist staged cache updates (optional / conditional)
@@ -633,7 +649,9 @@ def _add_custom_model_interactive_loop(config_manager: ConfigManager) -> None:
                         added_count += 1
 
                 config_manager.update_models_cache(latest_cache)
-                display_success(f"Custom model cache updated - added {added_count} model(s)")
+                display_success(
+                    f"Custom model cache updated - added {added_count} model(s)"
+                )
             except Exception as e:
                 display_error(f"Failed to update custom model cache: {e}")
         else:

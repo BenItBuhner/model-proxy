@@ -4,7 +4,6 @@ Ensures that 429/404 errors on one model only block that specific model/provider
 while 400/401/403 errors block the key globally for the provider.
 """
 
-
 import pytest
 
 from app.core.api_key_manager import (
