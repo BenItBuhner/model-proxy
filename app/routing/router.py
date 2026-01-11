@@ -176,7 +176,8 @@ class FallbackRouter:
         # Non-streaming: iterate through route configs with KeyCycleTracker
         for route_config, is_fallback, source_model in route_configs:
             tracker = KeyCycleTracker(
-                route_config.provider,
+                provider=route_config.provider,
+                model=route_config.model,
                 max_cycles=max_key_cycles,
             )
 
@@ -222,16 +223,22 @@ class FallbackRouter:
                         f"Route succeeded: provider={resolved_route.provider}, "
                         f"model={resolved_route.model}"
                     )
+                    # Print success message to console for visibility
+                    print(
+                        f"[OK] Request succeeded: {logical_model} -> "
+                        f"{resolved_route.provider}/{resolved_route.model} "
+                        f"(attempt {attempt_number})"
+                    )
                     return result
 
                 except Exception as e:
-                    tracker.mark_failed(api_key)
+                    is_global = self._is_global_error(e)
+                    tracker.mark_failed(api_key, is_global=is_global)
 
                     error_info = {
                         "attempt": attempt_number,
                         "provider": resolved_route.provider,
                         "model": resolved_route.model,
-                        "route_id": resolved_route.route_id,
                         "error": str(e),
                         "error_type": type(e).__name__,
                     }
@@ -341,7 +348,6 @@ class FallbackRouter:
             base_url=route_config.base_url,
             api_key=api_key,
             timeout_seconds=route_config.timeout_seconds or 60,
-            route_id=route_config.id,
         )
 
     # Legacy method - keep for backward compatibility with resolve_attempts
@@ -394,6 +400,12 @@ class FallbackRouter:
                     f"Route succeeded: provider={attempt.route.provider}, "
                     f"model={attempt.route.model}"
                 )
+                # Print success message to console for visibility
+                print(
+                    f"[OK] Request succeeded: {logical_model} -> "
+                    f"{attempt.route.provider}/{attempt.route.model} "
+                    f"(attempt {attempt.attempt_number})"
+                )
                 return result
 
             except Exception as e:
@@ -401,7 +413,6 @@ class FallbackRouter:
                     "attempt": attempt.attempt_number,
                     "provider": attempt.route.provider,
                     "model": attempt.route.model,
-                    "route_id": attempt.route.route_id,
                     "error": str(e),
                     "error_type": type(e).__name__,
                 }
@@ -461,7 +472,8 @@ class FallbackRouter:
 
         for route_config, is_fallback, source_model in route_configs:
             tracker = KeyCycleTracker(
-                route_config.provider,
+                provider=route_config.provider,
+                model=route_config.model,
                 max_cycles=max_key_cycles,
             )
 
@@ -508,19 +520,25 @@ class FallbackRouter:
                         yield chunk
 
                     logger.info(
-                        f"Streaming route completed: provider={resolved_route.provider}, "
+                        f"Streaming route succeeded: provider={resolved_route.provider}, "
                         f"model={resolved_route.model}"
+                    )
+                    # Print success message to console for visibility
+                    print(
+                        f"[OK] Stream succeeded: {logical_model} -> "
+                        f"{resolved_route.provider}/{resolved_route.model} "
+                        f"(attempt {attempt_number})"
                     )
                     return  # Success!
 
                 except Exception as e:
-                    tracker.mark_failed(api_key)
+                    is_global = self._is_global_error(e)
+                    tracker.mark_failed(api_key, is_global=is_global)
 
                     error_info = {
                         "attempt": attempt_number,
                         "provider": resolved_route.provider,
                         "model": resolved_route.model,
-                        "route_id": resolved_route.route_id,
                         "error": str(e),
                         "error_type": type(e).__name__,
                     }
@@ -595,8 +613,14 @@ class FallbackRouter:
 
                 # Stream completed successfully
                 logger.info(
-                    f"Streaming route completed: provider={attempt.route.provider}, "
+                    f"Streaming route succeeded: provider={attempt.route.provider}, "
                     f"model={attempt.route.model}"
+                )
+                # Print success message to console for visibility
+                print(
+                    f"[OK] Stream succeeded: {logical_model} -> "
+                    f"{attempt.route.provider}/{attempt.route.model} "
+                    f"(attempt {attempt.attempt_number})"
                 )
                 return  # Exit the generator
 
@@ -605,7 +629,6 @@ class FallbackRouter:
                     "attempt": attempt.attempt_number,
                     "provider": attempt.route.provider,
                     "model": attempt.route.model,
-                    "route_id": attempt.route.route_id,
                     "error": str(e),
                     "error_type": type(e).__name__,
                 }
@@ -766,7 +789,6 @@ class FallbackRouter:
                 base_url=route_config.base_url,
                 api_key=api_key,
                 timeout_seconds=route_config.timeout_seconds or default_timeout,
-                route_id=route_config.id,
             )
 
             attempt = Attempt(
@@ -851,6 +873,27 @@ class FallbackRouter:
         ]
 
         return any(indicator in error_msg for indicator in transient_indicators)
+
+    def _is_global_error(self, error: Exception) -> bool:
+        """
+        Determine if an error is global (applies to all models for this key)
+        or model-specific.
+
+        Global errors: 401 Unauthorized, 403 Forbidden (key-wide authentication issues).
+        Model-specific: 400 Bad Request (could be model params), 404 Not Found,
+                        429 Rate Limit, 5xx Server Error.
+        """
+        status_code = None
+        if hasattr(error, "status"):
+            status_code = error.status
+        elif hasattr(error, "status_code"):
+            status_code = error.status_code
+        elif isinstance(error, RouteExecutionError) and error.status_code:
+            status_code = error.status_code
+
+        # Only 401 and 403 are truly key-wide/account-wide issues.
+        # 400 is ambiguous (could be model-specific params) so treat as model-specific.
+        return status_code in (401, 403)
 
     def _format_routing_error_message(
         self,

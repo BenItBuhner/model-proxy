@@ -6,10 +6,58 @@ Loads provider configurations from JSON files and provides access to settings.
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
 # Cache for loaded provider configs
 _provider_configs: Dict[str, Dict[str, Any]] = {}
+
+# Cache for config directory path
+_config_dir_cache: Optional[Path] = None
+
+
+def _find_config_dir() -> Path:
+    """
+    Find the config directory by searching multiple locations.
+
+    Search order:
+    1. Package-relative (for source installs): <package_root>/config
+    2. Current working directory: ./config
+    3. User home directory: ~/.model-proxy/config
+
+    Returns:
+        Path to config directory
+
+    Raises:
+        FileNotFoundError: If config directory cannot be found
+    """
+    global _config_dir_cache
+
+    if _config_dir_cache is not None and _config_dir_cache.exists():
+        return _config_dir_cache
+
+    # Locations to search
+    search_paths = [
+        # Package-relative path (for source/editable installs)
+        Path(__file__).parent.parent.parent / "config",
+        # Current working directory
+        Path.cwd() / "config",
+        # User home directory
+        Path.home() / ".model-proxy" / "config",
+    ]
+
+    for path in search_paths:
+        if path.exists() and (path / "providers").exists():
+            _config_dir_cache = path
+            return path
+
+    # If no config found, return the package-relative path (will create if needed)
+    _config_dir_cache = search_paths[0]
+    return _config_dir_cache
+
+
+def _get_providers_dir() -> Path:
+    """Get the providers config directory."""
+    return _find_config_dir() / "providers"
 
 
 def _get_provider_config_path(provider_name: str) -> Path:
@@ -22,8 +70,7 @@ def _get_provider_config_path(provider_name: str) -> Path:
     Returns:
         Path to provider config file
     """
-    config_dir = Path(__file__).parent.parent.parent / "config" / "providers"
-    return config_dir / f"{provider_name}.json"
+    return _get_providers_dir() / f"{provider_name}.json"
 
 
 def load_provider_config(provider_name: str) -> Dict[str, Any]:
@@ -71,13 +118,13 @@ def get_all_provider_configs() -> Dict[str, Dict[str, Any]]:
     Returns:
         Dictionary mapping provider names to their configs
     """
-    config_dir = Path(__file__).parent.parent.parent / "config" / "providers"
+    providers_dir = _get_providers_dir()
 
-    if not config_dir.exists():
+    if not providers_dir.exists():
         return {}
 
     configs = {}
-    for config_file in config_dir.glob("*.json"):
+    for config_file in providers_dir.glob("*.json"):
         provider_name = config_file.stem
         try:
             configs[provider_name] = load_provider_config(provider_name)

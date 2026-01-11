@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 services:
   api:
     build: .
@@ -9,3 +9,31 @@ services:
     environment:
       - ANTHROPIC_API_KEY=your_anthropic_api_key
       - OPENAI_API_KEY=your_openai_api_key
+      - MODEL_PROXY_HOST=0.0.0.0
+      - MODEL_PROXY_PORT=9876
+      - MODEL_PROXY_RELOAD=false
+  # Optional: Development service with auto-reload
+  api-dev:
+    build: .
+    ports:
+      - "9876:9876"
+    volumes:
+      - .:/app
+    environment:
+      - ANTHROPIC_API_KEY=your_anthropic_api_key
+      - OPENAI_API_KEY=your_openai_api_key
+      - MODEL_PROXY_HOST=0.0.0.0
+      - MODEL_PROXY_PORT=9876
+      - MODEL_PROXY_RELOAD=true
+    command:
+      [
+        "model-proxy",
+        "start",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "9876",
+        "--reload",
+      ]
+    profiles:
+      - development

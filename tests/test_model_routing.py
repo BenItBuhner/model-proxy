@@ -31,7 +31,6 @@ class TestModelRoutingConfig:
             "timeout_seconds": 60,
             "model_routings": [
                 {
-                    "id": "primary",
                     "wire_protocol": "openai",
                     "provider": "cerebras",
                     "model": "zai-glm-4.6",
@@ -53,14 +52,12 @@ class TestModelRoutingConfig:
             "logical_name": "test-model",
             "model_routings": [
                 {
-                    "id": "primary",
                     "wire_protocol": "openai",
                     "provider": "cerebras",
                     "model": "model-a",
                     "api_key_env": ["KEY1", "KEY2"],
                 },
                 {
-                    "id": "secondary",
                     "wire_protocol": "openai",
                     "provider": "nahcrof",
                     "model": "model-b",
@@ -128,7 +125,6 @@ class TestModelRoutingConfig:
             model="test-model",
         )
 
-        assert route.id is None
         assert route.base_url is None
         assert route.timeout_seconds is None
         assert route.wire_protocol is None
@@ -156,7 +152,6 @@ class TestResolvedRoute:
         assert route.api_key == "test-api-key"
         assert route.timeout_seconds == 60
         assert route.base_url is None
-        assert route.route_id is None
 
 
 class TestAttempt:

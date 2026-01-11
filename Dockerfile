@@ -16,5 +16,11 @@ RUN uv sync --frozen
 # Copy the content of the local src directory to the working directory
 COPY . .
 
-# Specify the command to run on container startup using uv run
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9876"]
+# Make the CLI entry points available
+RUN uv pip install -e .
+
+# Specify the command to run on container startup using the model-proxy CLI
+# These flags can be overridden at runtime, e.g.:
+# docker run model-proxy start --port 8000
+# or via docker-compose environment variables
+CMD ["model-proxy", "start", "--host", "0.0.0.0", "--port", "9876"]

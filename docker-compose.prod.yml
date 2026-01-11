@@ -5,6 +5,19 @@ services:
     ports:
       - "9876:9876"
     restart: always
+    command:
+      [
+        "model-proxy",
+        "start",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "9876",
+        "--workers",
+        "4",
+        "--log-level",
+        "info",
+      ]
     environment:
       - CLIENT_API_KEY=${CLIENT_API_KEY}
       - NAHCROF_API_KEY=${NAHCROF_API_KEY}

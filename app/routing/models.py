@@ -12,10 +12,6 @@ from pydantic import BaseModel, Field
 class RouteConfig(BaseModel):
     """Configuration for a single provider route."""
 
-    id: Optional[str] = Field(
-        default=None,
-        description="Optional identifier for this route (e.g., 'primary', 'secondary')",
-    )
     wire_protocol: Optional[Literal["openai", "anthropic"]] = Field(
         default=None,
         description=(
@@ -74,9 +70,6 @@ class ResolvedRoute(BaseModel):
     base_url: Optional[str] = Field(default=None, description="Base URL to use")
     api_key: str = Field(..., description="Resolved API key to use")
     timeout_seconds: int = Field(..., description="Timeout in seconds")
-    route_id: Optional[str] = Field(
-        default=None, description="Optional route identifier"
-    )
 
 
 class Attempt(BaseModel):

@@ -124,8 +124,9 @@ class OpenAIProvider(BaseProvider):
                 auth_headers = get_provider_auth_headers(self.provider_name, api_key)
 
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    # Build payload - Gemini's OpenAI-compat endpoint has limited parameter support
+                    # Build payload - Some providers have limited parameter support
                     is_gemini = self.provider_name == "gemini"
+                    is_cerebras = self.provider_name == "cerebras"
 
                     # Sanitize messages for Gemini - remove unsupported fields
                     sanitized_messages = messages
@@ -167,20 +168,34 @@ class OpenAIProvider(BaseProvider):
                     if top_p is not None and (not is_gemini or top_p != 1.0):
                         payload["top_p"] = top_p
 
-                    # Gemini doesn't support n parameter
-                    if n is not None and not is_gemini:
+                    # Gemini and Cerebras don't support n parameter
+                    if n is not None and not is_gemini and not is_cerebras:
                         payload["n"] = n
 
-                    # Gemini doesn't support stop sequences well
+                    # Gemini doesn't support stop sequences well, but Cerebras does
                     if stop is not None and not is_gemini:
                         payload["stop"] = stop
+
+                    # Cerebras uses max_completion_tokens instead of max_tokens
                     if max_tokens is not None:
-                        payload["max_tokens"] = max_tokens
-                    if presence_penalty is not None and not is_gemini:
+                        if is_cerebras:
+                            payload["max_completion_tokens"] = max_tokens
+                        else:
+                            payload["max_tokens"] = max_tokens
+
+                    # Cerebras and Gemini don't support presence_penalty
+                    if (
+                        presence_penalty is not None
+                        and not is_gemini
+                        and not is_cerebras
+                    ):
                         payload["presence_penalty"] = presence_penalty
-                    if logit_bias is not None and not is_gemini:
+
+                    # Cerebras and Gemini don't support logit_bias
+                    if logit_bias is not None and not is_gemini and not is_cerebras:
                         payload["logit_bias"] = logit_bias
-                    # Gemini doesn't support user parameter
+
+                    # Gemini doesn't support user parameter, but Cerebras does
                     if user is not None and not is_gemini:
                         payload["user"] = user
                     if tools is not None:
@@ -214,6 +229,13 @@ class OpenAIProvider(BaseProvider):
                         # Mark key as failed and try next one
                         self._mark_key_failed(api_key)
                         retry_count += 1
+                        # Log detailed error for debugging
+                        logger.error(
+                            f"Provider {self.provider_name} returned {response.status_code}: {response.text[:500]}"
+                        )
+                        logger.debug(
+                            f"Failed request payload: model={model}, endpoint={endpoint_url}"
+                        )
                         error_msg = (
                             f"OpenAI API error {response.status_code}: {response.text}"
                         )
@@ -281,8 +303,9 @@ class OpenAIProvider(BaseProvider):
                 endpoint_url = self._get_endpoint_url()
                 auth_headers = get_provider_auth_headers(self.provider_name, api_key)
 
-                # Build payload - Gemini's OpenAI-compat endpoint has limited parameter support
+                # Build payload - Some providers have limited parameter support
                 is_gemini = self.provider_name == "gemini"
+                is_cerebras = self.provider_name == "cerebras"
 
                 # Sanitize messages for Gemini - remove unsupported fields
                 sanitized_messages = messages
@@ -322,20 +345,30 @@ class OpenAIProvider(BaseProvider):
                 if top_p is not None and (not is_gemini or top_p != 1.0):
                     payload["top_p"] = top_p
 
-                # Gemini doesn't support n parameter
-                if n is not None and not is_gemini:
+                # Gemini and Cerebras don't support n parameter
+                if n is not None and not is_gemini and not is_cerebras:
                     payload["n"] = n
 
-                # Gemini doesn't support stop sequences well
+                # Gemini doesn't support stop sequences well, but Cerebras does
                 if stop is not None and not is_gemini:
                     payload["stop"] = stop
+
+                # Cerebras uses max_completion_tokens instead of max_tokens
                 if max_tokens is not None:
-                    payload["max_tokens"] = max_tokens
-                if presence_penalty is not None and not is_gemini:
+                    if is_cerebras:
+                        payload["max_completion_tokens"] = max_tokens
+                    else:
+                        payload["max_tokens"] = max_tokens
+
+                # Cerebras and Gemini don't support presence_penalty
+                if presence_penalty is not None and not is_gemini and not is_cerebras:
                     payload["presence_penalty"] = presence_penalty
-                if logit_bias is not None and not is_gemini:
+
+                # Cerebras and Gemini don't support logit_bias
+                if logit_bias is not None and not is_gemini and not is_cerebras:
                     payload["logit_bias"] = logit_bias
-                # Gemini doesn't support user parameter
+
+                # Gemini doesn't support user parameter, but Cerebras does
                 if user is not None and not is_gemini:
                     payload["user"] = user
                 if tools is not None:
@@ -368,6 +401,13 @@ class OpenAIProvider(BaseProvider):
                                 self._mark_key_failed(api_key)
                                 retry_count += 1
                                 body = error_text.decode(errors="replace")
+                                # Log detailed error for debugging
+                                logger.error(
+                                    f"Provider {self.provider_name} returned {response.status_code}: {body[:500]}"
+                                )
+                                logger.debug(
+                                    f"Failed request payload: model={model}, endpoint={endpoint_url}"
+                                )
                                 error_msg = (
                                     f"OpenAI API error {response.status_code}: {body}"
                                 )

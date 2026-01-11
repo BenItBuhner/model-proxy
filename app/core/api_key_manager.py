@@ -5,6 +5,9 @@ Uses provider configuration for environment variable patterns.
 
 Supports round-robin key selection and per-request cycle tracking for robust
 fallback behavior across multiple API keys and providers.
+
+Enhanced with scoped failures to distinguish between provider-wide failures
+(e.g., 401 Unauthorized) and model-specific failures (e.g., 429 Rate Limit).
 """
 
 import logging
@@ -31,7 +34,12 @@ class KeyRotationState:
     """Tracks per-provider key rotation state (global, persists across requests)."""
 
     last_used_index: int = -1
+    # Global failures: {key: timestamp}
     failed_keys: Dict[str, float] = field(default_factory=dict)
+    # Model-scoped failures: {model: {key: timestamp}}
+    model_failed_keys: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: defaultdict(dict)
+    )
 
 
 # Global rotation state: {provider: KeyRotationState}
@@ -109,20 +117,27 @@ class KeyCycleTracker:
     - All keys in the cycle have been tried once (cycle reset within request)
     - The KEY_COOLDOWN_SECONDS expires (time-based re-entry across requests)
 
-    Failed keys are preserved across requests to allow provider skipping when
-    all keys are in cooldown.
+    Supports scoped failures to distinguish between model-specific limits (429s)
+    and provider-wide failures (401s).
     """
 
-    def __init__(self, provider: str, max_cycles: Optional[int] = None):
+    def __init__(
+        self,
+        provider: str,
+        model: Optional[str] = None,
+        max_cycles: Optional[int] = None,
+    ):
         """
-        Initialize tracker for a specific provider.
+        Initialize tracker for a specific provider and optional model context.
 
         Args:
             provider: Provider name (e.g., "openai", "cerebras")
+            model: Optional model name for scoped failure tracking
             max_cycles: Maximum cycles through all keys before exhaustion.
                         Defaults to MAX_KEY_RETRY_CYCLES env setting.
         """
         self.provider = provider
+        self.model = model
         self.max_cycles = max_cycles if max_cycles is not None else MAX_KEY_RETRY_CYCLES
         self.current_cycle = 0
         self.keys_tried_this_cycle: Set[str] = set()
@@ -169,17 +184,34 @@ class KeyCycleTracker:
             # BUT: bypass cooldown check if this tracker has already attempted the key
             # (allows retries within the same request)
             if candidate not in self._keys_attempted:
+                # 1. Check Global Failures
                 fail_time = state.failed_keys.get(candidate)
-                if fail_time is not None and KEY_COOLDOWN_SECONDS > 0:
-                    if (current_time - fail_time) < KEY_COOLDOWN_SECONDS:
-                        continue  # Still in cooldown from previous request
+                if (
+                    fail_time is not None
+                    and KEY_COOLDOWN_SECONDS > 0
+                    and (current_time - fail_time) < KEY_COOLDOWN_SECONDS
+                ):
+                    continue  # Still in global cooldown
+
+                # 2. Check Model-Scoped Failures (if model context available)
+                if self.model:
+                    model_fails = state.model_failed_keys.get(self.model, {})
+                    fail_time = model_fails.get(candidate)
+                    if (
+                        fail_time is not None
+                        and KEY_COOLDOWN_SECONDS > 0
+                        and (current_time - fail_time) < KEY_COOLDOWN_SECONDS
+                    ):
+                        continue  # Still in model-scoped cooldown
 
             # Key is available
             self.keys_tried_this_cycle.add(candidate)
             self._keys_attempted.add(candidate)
             state.last_used_index = self._key_index
             key_hint = f"...{candidate[-4:]}" if len(candidate) >= 4 else "****"
-            logger.info(f"Using API key {key_hint} for {self.provider}")
+            logger.info(
+                f"Using API key {key_hint} for {self.provider} (model: {self.model or 'N/A'})"
+            )
             return candidate
 
         # All keys tried this cycle - check if we should start new cycle
@@ -202,9 +234,6 @@ class KeyCycleTracker:
         """
         self.current_cycle += 1
         self.keys_tried_this_cycle.clear()
-        # NOTE: We do NOT clear _rotation_state[self.provider].failed_keys
-        # This preserves failures across requests so providers with all keys
-        # in cooldown can be skipped entirely.
         logger.debug(
             f"Cycle reset for provider {self.provider}: "
             f"now on cycle {self.current_cycle}/{self.max_cycles}"
@@ -212,58 +241,64 @@ class KeyCycleTracker:
 
     def all_keys_in_cooldown(self) -> bool:
         """
-        Check if ALL keys for this provider are currently in cooldown.
-
-        This is used by the router to skip providers entirely when all
-        keys have recently failed and are still in their cooldown period.
+        Check if ALL keys for this provider/model combo are currently in cooldown.
 
         Returns:
             True if all keys are in cooldown and should be skipped
         """
         if not self._all_keys:
-            return True  # No keys = effectively unavailable
+            return True
 
         if KEY_COOLDOWN_SECONDS <= 0:
-            return False  # Cooldown disabled, keys always available
+            return False
 
         state = _rotation_state[self.provider]
         current_time = time.time()
 
         for key in self._all_keys:
-            fail_time = state.failed_keys.get(key)
-            if fail_time is None:
-                return False  # Key hasn't failed, not in cooldown
-            if (current_time - fail_time) >= KEY_COOLDOWN_SECONDS:
-                return False  # Cooldown expired for this key
+            # A key is available if it's NOT in global cooldown AND (NOT in model cooldown)
+            global_fail = state.failed_keys.get(key)
+            if (
+                global_fail is None
+                or (current_time - global_fail) >= KEY_COOLDOWN_SECONDS
+            ):
+                # Key is not in global cooldown. Now check model cooldown.
+                if self.model:
+                    model_fail = state.model_failed_keys.get(self.model, {}).get(key)
+                    if (
+                        model_fail is None
+                        or (current_time - model_fail) >= KEY_COOLDOWN_SECONDS
+                    ):
+                        return False  # Available for this model
+                else:
+                    return False  # Available (no model context to restrict it)
 
-        return True  # All keys are in cooldown
+        return True  # All keys are blocked either globally or for this model
 
-    def mark_failed(self, key: str) -> None:
+    def mark_failed(self, key: str, is_global: bool = False) -> None:
         """
-        Mark key as failed (updates global state).
+        Mark key as failed (updates state).
 
         Args:
             key: The API key that failed
+            is_global: If True, key is marked failed for ALL models (e.g. 401).
+                       If False, key is only marked failed for current model (e.g. 429).
         """
         key_hint = f"...{key[-4:]}" if len(key) >= 4 else "****"
-        logger.warning(
-            f"API key {key_hint} failed for {self.provider}, trying next key"
-        )
-        mark_key_failed(self.provider, key)
+        scope = "global" if is_global else f"model:{self.model}"
+        logger.warning(f"API key {key_hint} failed ({scope}) for {self.provider}")
+
+        if is_global:
+            mark_key_failed(self.provider, key)
+        elif self.model:
+            mark_key_failed(self.provider, key, model=self.model)
 
     def exhausted(self) -> bool:
-        """
-        Check if all cycles are exhausted.
-
-        Returns:
-            True if no more keys can be tried (all cycles used up or no keys)
-        """
-        # No keys available
+        """Check if all cycles are exhausted."""
         if not self._all_keys:
             return True
         if self.current_cycle >= self.max_cycles:
             return True
-        # Also exhausted if we've tried all keys and can't reset
         if self._should_reset_cycle() and self.current_cycle + 1 >= self.max_cycles:
             return True
         return False
@@ -280,21 +315,17 @@ class KeyCycleTracker:
 
 
 def get_available_keys(provider: str) -> List[str]:
-    """
-    Get list of available keys for a provider.
-    Cooldown is disabled by default; returns all parsed keys.
-    """
+    """Get list of all parsed keys for a provider."""
     return _parse_provider_keys(provider)
 
 
-def get_api_key(provider: str) -> Optional[str]:
+def get_api_key(provider: str, model: Optional[str] = None) -> Optional[str]:
     """
     Get an available API key for a provider using round-robin selection.
 
-    Skips keys that are currently in cooldown (if KEY_COOLDOWN_SECONDS > 0).
-
     Args:
         provider: Provider name
+        model: Optional model for scoped cooldown check
 
     Returns:
         API key string, or None if no keys available
@@ -307,82 +338,75 @@ def get_api_key(provider: str) -> Optional[str]:
     current_time = time.time()
     num_keys = len(all_keys)
 
-    # Try each key starting from the one after last used
     for offset in range(num_keys):
         next_index = (state.last_used_index + 1 + offset) % num_keys
         candidate_key = all_keys[next_index]
 
-        # Check if key is failed and still in cooldown
+        # 1. Check global cooldown
         fail_time = state.failed_keys.get(candidate_key)
-        if fail_time is not None and KEY_COOLDOWN_SECONDS > 0:
-            if (current_time - fail_time) < KEY_COOLDOWN_SECONDS:
-                continue  # Skip, still in cooldown
-            else:
-                # Cooldown expired, clear failure
-                del state.failed_keys[candidate_key]
+        if (
+            fail_time is not None
+            and KEY_COOLDOWN_SECONDS > 0
+            and (current_time - fail_time) < KEY_COOLDOWN_SECONDS
+        ):
+            continue
+
+        # 2. Check model-scoped cooldown
+        if model:
+            model_fails = state.model_failed_keys.get(model, {})
+            fail_time = model_fails.get(candidate_key)
+            if (
+                fail_time is not None
+                and KEY_COOLDOWN_SECONDS > 0
+                and (current_time - fail_time) < KEY_COOLDOWN_SECONDS
+            ):
+                continue
 
         state.last_used_index = next_index
         return candidate_key
 
-    # All keys failed and in cooldown
     return None
 
 
-def mark_key_failed(provider: str, key: str) -> None:
+def mark_key_failed(provider: str, key: str, model: Optional[str] = None) -> None:
     """
-    Mark an API key as failed, excluding it from selection until cooldown expires.
-
-    The key will be skipped in round-robin selection until:
-    - KEY_COOLDOWN_SECONDS expires (time-based re-entry), OR
-    - A KeyCycleTracker resets its cycle (all keys tried)
+    Mark an API key as failed.
 
     Args:
         provider: Provider name
         key: The failed API key
+        model: If provided, failure is scoped to this model only (e.g. 429).
+               If None, failure is global for the provider (e.g. 401).
     """
     state = _rotation_state[provider]
-    state.failed_keys[key] = time.time()
-    logger.debug(f"Marked key as failed for provider {provider}")
+    now = time.time()
+    if model:
+        state.model_failed_keys[model][key] = now
+        logger.debug(f"Marked key failed for {provider} model {model}")
+    else:
+        state.failed_keys[key] = now
+        logger.debug(f"Marked key failed globally for {provider}")
 
 
 def get_all_keys(provider: str) -> List[str]:
-    """
-    Get all keys for a provider (including failed ones).
-
-    Args:
-        provider: Provider name
-
-    Returns:
-        List of all API keys
-    """
+    """Get all keys for a provider."""
     return _parse_provider_keys(provider)
 
 
 def reset_failed_keys(provider: Optional[str] = None) -> None:
-    """
-    Reset failed keys for a provider (or all providers if None).
-    Useful for testing or manual recovery.
-
-    Args:
-        provider: Provider name, or None to reset all
-    """
+    """Reset failed keys for a provider (or all providers if None)."""
     if provider:
         if provider in _rotation_state:
             _rotation_state[provider].failed_keys.clear()
+            _rotation_state[provider].model_failed_keys.clear()
     else:
         for state in _rotation_state.values():
             state.failed_keys.clear()
+            state.model_failed_keys.clear()
 
 
 def reset_rotation_state(provider: Optional[str] = None) -> None:
-    """
-    Reset all rotation state for a provider (or all providers if None).
-    Resets both failed keys and last_used_index.
-    Useful for testing.
-
-    Args:
-        provider: Provider name, or None to reset all
-    """
+    """Reset all rotation state for a provider (or all providers if None)."""
     if provider:
         if provider in _rotation_state:
             _rotation_state[provider] = KeyRotationState()
@@ -391,14 +415,5 @@ def reset_rotation_state(provider: Optional[str] = None) -> None:
 
 
 def get_rotation_state(provider: str) -> KeyRotationState:
-    """
-    Get the current rotation state for a provider.
-    Useful for debugging and testing.
-
-    Args:
-        provider: Provider name
-
-    Returns:
-        KeyRotationState for the provider
-    """
+    """Get rotation state for a provider."""
     return _rotation_state[provider]
