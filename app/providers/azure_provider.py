@@ -180,7 +180,11 @@ class AzureProvider(BaseProvider):
                 return openai_response
 
             except Exception as e:
-                self._mark_key_failed(api_key)
+                # If the router injected a specific key for this route,
+                # do NOT mark it failed here. The fallback router owns
+                # cooldown decisions (including fallback_no_cooldown).
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 # Try to attach status code if available
@@ -362,7 +366,8 @@ class AzureProvider(BaseProvider):
                     return
 
             except Exception as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 if hasattr(e, "status_code"):

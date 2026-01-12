@@ -78,10 +78,12 @@ def test_anthropic_to_openai_request_with_tool_results():
     openai_req = anthropic_to_openai_request(anthropic_req)
 
     assert len(openai_req["messages"]) == 2
-    assert openai_req["messages"][0]["role"] == "user"
-    assert openai_req["messages"][1]["role"] == "tool"
-    assert openai_req["messages"][1]["tool_call_id"] == "call_1"
-    assert "42" in openai_req["messages"][1]["content"]
+    # Tool messages must be emitted before any user text so they can immediately
+    # follow the assistant's tool_calls when present (strict providers require this).
+    assert openai_req["messages"][0]["role"] == "tool"
+    assert openai_req["messages"][1]["role"] == "user"
+    assert openai_req["messages"][0]["tool_call_id"] == "call_1"
+    assert "42" in openai_req["messages"][0]["content"]
 
 
 def test_openai_to_anthropic_request_basic():

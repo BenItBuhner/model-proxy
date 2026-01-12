@@ -196,9 +196,15 @@ def anthropic_to_openai_request(anthropic_request: Dict[str, Any]) -> Dict[str, 
             openai_messages.append(assistant_message)
         elif role == "user":
             text, tool_outputs = _split_anthropic_user_content(content)
+            # IMPORTANT: In OpenAI tool-calling, tool messages must come immediately
+            # after the assistant message that emitted tool_calls. Some providers
+            # (e.g. Cerebras) are strict about this ordering.
+            #
+            # So if an Anthropic user message contains tool_result blocks, emit the
+            # converted OpenAI tool messages FIRST, then any user text AFTER.
+            openai_messages.extend(tool_outputs)
             if text is not None:
                 openai_messages.append({"role": "user", "content": text})
-            openai_messages.extend(tool_outputs)
         else:
             openai_messages.append(
                 {

@@ -41,6 +41,12 @@
   "models": {},
 
   "error_handling": {
+    "400": {
+      "action": "fallback_no_cooldown"
+    },
+    "500": {
+      "action": "fallback_no_cooldown"
+    },
     "401": {
       "action": "global_key_failure"
     },

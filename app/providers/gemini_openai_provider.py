@@ -325,7 +325,11 @@ class GeminiOpenAIProvider(BaseProvider):
                     )
 
                     if response.status_code >= 400:
-                        self._mark_key_failed(api_key)
+                        # If the router injected a specific key for this route,
+                        # do NOT mark it failed here. The fallback router owns
+                        # cooldown decisions (including fallback_no_cooldown).
+                        if not self._route_api_key:
+                            self._mark_key_failed(api_key)
                         error_body = response.text
                         # Extract error message from JSON if possible
                         error_msg = f"HTTP {response.status_code}"
@@ -353,7 +357,8 @@ class GeminiOpenAIProvider(BaseProvider):
             except GeminiAPIError:
                 raise
             except Exception as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 logger.warning(f"Gemini call failed: {str(e)[:100]}")
                 last_error = GeminiAPIError(
                     f"Gemini API error: {str(e)}", status=500, body=str(e)
@@ -411,7 +416,8 @@ class GeminiOpenAIProvider(BaseProvider):
                     ) as response:
                         if response.status_code >= 400:
                             error_text = await response.aread()
-                            self._mark_key_failed(api_key)
+                            if not self._route_api_key:
+                                self._mark_key_failed(api_key)
                             error_body = error_text.decode(errors="replace")
                             # Extract error message from JSON if possible
                             error_msg = f"HTTP {response.status_code}"
@@ -450,7 +456,8 @@ class GeminiOpenAIProvider(BaseProvider):
                                 logger.warning(
                                     f"Gemini stream format error: {line[:200]}"
                                 )
-                                self._mark_key_failed(api_key)
+                                if not self._route_api_key:
+                                    self._mark_key_failed(api_key)
                                 raise GeminiAPIError(
                                     f"Gemini streaming format error: {line[:200]}",
                                     status=400,
@@ -485,7 +492,8 @@ class GeminiOpenAIProvider(BaseProvider):
                                         logger.warning(
                                             f"Gemini embedded error: {error_msg[:200]}"
                                         )
-                                        self._mark_key_failed(api_key)
+                                        if not self._route_api_key:
+                                            self._mark_key_failed(api_key)
                                         raise GeminiAPIError(
                                             f"Gemini stream error: {error_msg}",
                                             status=500,
@@ -508,7 +516,8 @@ class GeminiOpenAIProvider(BaseProvider):
                                         "ResponseStreamResult" in json_str
                                         or "error" in json_str.lower()
                                     ):
-                                        self._mark_key_failed(api_key)
+                                        if not self._route_api_key:
+                                            self._mark_key_failed(api_key)
                                         raise GeminiAPIError(
                                             f"Gemini streaming error: {json_str[:200]}",
                                             status=500,
@@ -522,7 +531,8 @@ class GeminiOpenAIProvider(BaseProvider):
             except GeminiAPIError:
                 raise
             except Exception as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 logger.warning(f"Gemini stream failed: {str(e)[:100]}")
                 last_error = GeminiAPIError(
                     f"Gemini API error: {str(e)}", status=500, body=str(e)

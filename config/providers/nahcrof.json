@@ -26,7 +26,7 @@
 
   "request_config": {
     "timeout_seconds": 180,
-    "max_retries": 3,
+    "max_retries": 50,
     "retry_on_status": [429, 500, 502, 503, 504],
     "default_parameters": {
       "temperature": 1.0,
@@ -45,6 +45,12 @@
   "models": {},
 
   "error_handling": {
+    "400": {
+      "action": "fallback_no_cooldown"
+    },
+    "500": {
+      "action": "fallback_no_cooldown"
+    },
     "401": {
       "action": "global_key_failure"
     },

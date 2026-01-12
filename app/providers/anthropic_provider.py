@@ -145,7 +145,11 @@ class AnthropicProvider(BaseProvider):
 
                     # Check for errors
                     if response.status_code >= 400:
-                        self._mark_key_failed(api_key)
+                        # If the router injected a specific key for this route,
+                        # do NOT mark it failed here. The fallback router owns
+                        # cooldown decisions (including fallback_no_cooldown).
+                        if not self._route_api_key:
+                            self._mark_key_failed(api_key)
                         retry_count += 1
                         error_msg = f"Anthropic API error {response.status_code}: {response.text}"
                         last_error = Exception(error_msg)
@@ -156,12 +160,14 @@ class AnthropicProvider(BaseProvider):
                     return response.json()
 
             except httpx.TimeoutException as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 continue
             except Exception as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 continue
@@ -243,7 +249,8 @@ class AnthropicProvider(BaseProvider):
                     ) as response:
                         if response.status_code >= 400:
                             error_text = await response.aread()
-                            self._mark_key_failed(api_key)
+                            if not self._route_api_key:
+                                self._mark_key_failed(api_key)
                             retry_count += 1
                             error_msg = f"Anthropic API error {response.status_code}: {error_text.decode()}"
                             last_error = Exception(error_msg)
@@ -258,12 +265,14 @@ class AnthropicProvider(BaseProvider):
                         return  # Success, exit retry loop
 
             except httpx.TimeoutException as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 continue
             except Exception as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 continue

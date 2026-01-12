@@ -227,7 +227,11 @@ class OpenAIProvider(BaseProvider):
                     # Check for errors
                     if response.status_code >= 400:
                         # Mark key as failed and try next one
-                        self._mark_key_failed(api_key)
+                        # If the router injected a specific key for this route,
+                        # do NOT mark it failed here. The fallback router owns
+                        # cooldown decisions (including fallback_no_cooldown).
+                        if not self._route_api_key:
+                            self._mark_key_failed(api_key)
                         retry_count += 1
                         # Log detailed error for debugging
                         logger.error(
@@ -247,12 +251,14 @@ class OpenAIProvider(BaseProvider):
                     return response.json()
 
             except httpx.TimeoutException as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 continue
             except Exception as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 continue
@@ -398,7 +404,8 @@ class OpenAIProvider(BaseProvider):
                         ) as response:
                             if response.status_code >= 400:
                                 error_text = await response.aread()
-                                self._mark_key_failed(api_key)
+                                if not self._route_api_key:
+                                    self._mark_key_failed(api_key)
                                 retry_count += 1
                                 body = error_text.decode(errors="replace")
                                 # Log detailed error for debugging
@@ -549,7 +556,8 @@ class OpenAIProvider(BaseProvider):
                                 endpoint_url, headers=headers, json=fallback_payload
                             )
                             if resp.status_code >= 400:
-                                self._mark_key_failed(api_key)
+                                if not self._route_api_key:
+                                    self._mark_key_failed(api_key)
                                 retry_count += 1
                                 body = resp.text
                                 error_msg = (
@@ -591,18 +599,21 @@ class OpenAIProvider(BaseProvider):
                             yield "data: [DONE]\n\n"
                             return
                         except Exception as fb_err:
-                            self._mark_key_failed(api_key)
+                            if not self._route_api_key:
+                                self._mark_key_failed(api_key)
                             retry_count += 1
                             last_error = fb_err
                             continue
 
             except httpx.TimeoutException as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 continue
             except Exception as e:
-                self._mark_key_failed(api_key)
+                if not self._route_api_key:
+                    self._mark_key_failed(api_key)
                 retry_count += 1
                 last_error = e
                 continue

@@ -201,21 +201,23 @@ class KeyCycleTracker:
             # BUT: bypass cooldown check if this tracker has already attempted the key
             # (allows retries within the same request)
             if candidate not in self._keys_attempted:
-                # 1. Check Global/Provider Failures
-                fail_info = state.failed_keys.get(candidate)
-                if fail_info:
-                    fail_time, cooldown_duration = fail_info
-                    if (current_time - fail_time) < cooldown_duration:
-                        continue  # Still in global cooldown
-
-                # 2. Check Unified Model-Scoped Failures (if model context available)
-                if self.model:
-                    model_fails = state.model_failed_keys.get(self.route_key, {})
-                    fail_info = model_fails.get(candidate)
+                # Global override: KEY_COOLDOWN_SECONDS <= 0 disables key cooldown checks
+                if KEY_COOLDOWN_SECONDS > 0:
+                    # 1. Check Global/Provider Failures
+                    fail_info = state.failed_keys.get(candidate)
                     if fail_info:
                         fail_time, cooldown_duration = fail_info
                         if (current_time - fail_time) < cooldown_duration:
-                            continue  # Still in model-scoped cooldown
+                            continue  # Still in global cooldown
+
+                    # 2. Check Unified Model-Scoped Failures (if model context available)
+                    if self.model:
+                        model_fails = state.model_failed_keys.get(self.route_key, {})
+                        fail_info = model_fails.get(candidate)
+                        if fail_info:
+                            fail_time, cooldown_duration = fail_info
+                            if (current_time - fail_time) < cooldown_duration:
+                                continue  # Still in model-scoped cooldown
 
             # Key is available
             self.keys_tried_this_cycle.add(candidate)
@@ -268,6 +270,10 @@ class KeyCycleTracker:
         # Check provider-wide cooldown
         if state.provider_failed_until > current_time:
             return True
+
+        # Global override: KEY_COOLDOWN_SECONDS <= 0 disables key cooldown checks
+        if KEY_COOLDOWN_SECONDS <= 0:
+            return False
 
         for key in self._all_keys:
             # A key is available if it's NOT in global cooldown AND (NOT in model cooldown)
@@ -331,9 +337,14 @@ class KeyCycleTracker:
         elif effective_action == "global_key_failure":
             mark_key_failed(self.provider, key, cooldown_duration=duration)
         else:  # model_key_failure
-            mark_key_failed(
-                self.provider, key, model=self.route_key, cooldown_duration=duration
-            )
+            # If no model context was provided, treat this as a global failure.
+            # (There is no model-scoped key rotation without a model.)
+            if self.model:
+                mark_key_failed(
+                    self.provider, key, model=self.route_key, cooldown_duration=duration
+                )
+            else:
+                mark_key_failed(self.provider, key, cooldown_duration=duration)
 
     def exhausted(self) -> bool:
         """Check if all cycles are exhausted."""

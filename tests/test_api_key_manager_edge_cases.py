@@ -122,7 +122,12 @@ def test_mark_key_failed_tracks_failure(monkeypatch):
 
     state = get_rotation_state("openai")
     assert "key1" in state.failed_keys
-    assert isinstance(state.failed_keys["key1"], float)
+    fail_info = state.failed_keys["key1"]
+    assert isinstance(fail_info, tuple)
+    assert len(fail_info) == 2
+    fail_time, cooldown_seconds = fail_info
+    assert isinstance(fail_time, float)
+    assert isinstance(cooldown_seconds, int)
 
     # Clean up
     reset_rotation_state("openai")

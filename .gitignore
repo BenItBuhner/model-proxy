@@ -188,3 +188,6 @@ logs/
 
 # Model configurations
 config/models/
+
+# Model discovery cache
+config/models.json

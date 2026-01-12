@@ -33,6 +33,172 @@ logger = logging.getLogger("fallback_router")
 VERBOSE_HTTP_ERRORS = os.getenv("VERBOSE_HTTP_ERRORS", "false").lower() == "true"
 
 
+def _fix_missing_tool_responses(request_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Scan messages for tool_calls without matching tool responses.
+    Inject empty tool response messages for each missing tool_call_id.
+
+    This fixes the 422 error: "An assistant message with 'tool_calls' must be
+    followed by tool messages responding to each 'tool_call_id'."
+
+    Args:
+        request_data: The original request data with messages
+
+    Returns:
+        Modified request data with missing tool responses injected
+    """
+    messages = request_data.get("messages", [])
+    if not messages:
+        return request_data
+
+    fixed_messages = []
+    pending_tool_call_ids = []
+
+    for msg in messages:
+        # If assistant message has tool_calls, track the IDs
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            # First, check if there are still pending tool calls from before
+            # that need responses injected
+            if pending_tool_call_ids:
+                for tc_id in pending_tool_call_ids:
+                    fixed_messages.append(
+                        {"role": "tool", "tool_call_id": tc_id, "content": ""}
+                    )
+                pending_tool_call_ids.clear()
+
+            # Now add the current assistant message
+            fixed_messages.append(msg)
+
+            # Track new pending tool_call_ids
+            for tc in msg["tool_calls"]:
+                tc_id = tc.get("id")
+                if tc_id:
+                    pending_tool_call_ids.append(tc_id)
+        elif msg.get("role") == "tool":
+            # Tool response - remove from pending if it matches
+            tool_call_id = msg.get("tool_call_id")
+            if tool_call_id in pending_tool_call_ids:
+                pending_tool_call_ids.remove(tool_call_id)
+            fixed_messages.append(msg)
+        else:
+            # For other messages (user, system), inject any pending tool responses first
+            if pending_tool_call_ids:
+                for tc_id in pending_tool_call_ids:
+                    fixed_messages.append(
+                        {"role": "tool", "tool_call_id": tc_id, "content": ""}
+                    )
+                pending_tool_call_ids.clear()
+            fixed_messages.append(msg)
+
+    # Handle any remaining pending tool calls at the end
+    if pending_tool_call_ids:
+        for tc_id in pending_tool_call_ids:
+            fixed_messages.append(
+                {"role": "tool", "tool_call_id": tc_id, "content": ""}
+            )
+
+    return {**request_data, "messages": fixed_messages}
+
+
+def _fix_missing_tool_results_anthropic(request_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Anthropic-format variant of the tool-response auto-fix.
+
+    If an assistant message contains tool_use blocks, ensure that there is a
+    subsequent user message containing tool_result blocks for each tool_use id.
+    Missing tool_result blocks are fabricated with empty content.
+
+    This is used when the client is using the Anthropic protocol but the upstream
+    provider is OpenAI-compatible (e.g. Cerebras) and rejects missing tool results.
+    """
+    messages = request_data.get("messages", [])
+    if not isinstance(messages, list) or not messages:
+        return request_data
+
+    def _extract_tool_use_ids(content: Any) -> List[str]:
+        ids: List[str] = []
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    tid = block.get("id")
+                    if tid:
+                        ids.append(str(tid))
+        return ids
+
+    def _extract_tool_result_ids(content: Any) -> List[str]:
+        ids: List[str] = []
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_result":
+                    tid = block.get("tool_use_id")
+                    if tid:
+                        ids.append(str(tid))
+        return ids
+
+    def _make_tool_result_message(tool_ids: List[str]) -> Dict[str, Any]:
+        return {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tid,
+                    "content": "",
+                    "is_error": False,
+                }
+                for tid in tool_ids
+            ],
+        }
+
+    fixed_messages: List[Dict[str, Any]] = []
+    pending: List[str] = []
+
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+
+        role = msg.get("role")
+        content = msg.get("content")
+
+        if role == "assistant":
+            # If we have unresolved tool_use ids from a previous assistant message,
+            # inject fabricated tool_result blocks before the next assistant turn.
+            if pending:
+                fixed_messages.append(_make_tool_result_message(pending))
+                pending = []
+
+            fixed_messages.append(msg)
+            pending = _extract_tool_use_ids(content)
+            continue
+
+        if role == "user":
+            # If the previous assistant had tool_use blocks, ensure their results exist
+            if pending:
+                resolved = set(_extract_tool_result_ids(content))
+                missing = [tid for tid in pending if tid not in resolved]
+
+                # Inject missing tool_result blocks BEFORE the user's message so that
+                # after Anthropic->OpenAI conversion, tool messages come immediately
+                # after the assistant tool_calls.
+                if missing:
+                    fixed_messages.append(_make_tool_result_message(missing))
+                pending = []
+
+            fixed_messages.append(msg)
+            continue
+
+        # Unknown role: flush pending to keep sequence valid
+        if pending:
+            fixed_messages.append(_make_tool_result_message(pending))
+            pending = []
+        fixed_messages.append(msg)
+
+    # If request ends with assistant tool_use blocks and no user tool_result, append empty ones.
+    if pending:
+        fixed_messages.append(_make_tool_result_message(pending))
+
+    return {**request_data, "messages": fixed_messages}
+
+
 def _format_error_for_log(
     error: Exception,
     provider: str,
@@ -128,6 +294,13 @@ class FallbackRouter:
     def resolve_error_action(self, provider_name: str, error: Exception) -> dict:
         """
         Resolve the action to take for a given error based on provider config.
+
+        Default behavior (if not configured in provider error_handling):
+        - 401, 403: global_key_failure
+        - everything else: model_key_failure
+
+        NOTE: Providers can override specific status codes in their JSON config
+        (e.g. map 400/500 to fallback_no_cooldown, or 422 to auto_fix_tool_responses).
         """
         status_code = None
         if hasattr(error, "status"):
@@ -143,12 +316,12 @@ class FallbackRouter:
         config = get_provider_config(provider_name)
         error_handling = (config or {}).get("error_handling", {})
 
-        # Look up specific status code action
+        # Look up specific status code action from provider config
         action_info = error_handling.get(str(status_code))
         if action_info:
             return action_info
 
-        # Fallback to standard behavior
+        # Default behavior based on status code
         if status_code in (401, 403):
             return {"action": "global_key_failure"}
 
@@ -311,11 +484,7 @@ class FallbackRouter:
 
                 except Exception as e:
                     action_info = self.resolve_error_action(resolved_route.provider, e)
-                    tracker.mark_failed(
-                        api_key,
-                        action=action_info.get("action", "model_key_failure"),
-                        cooldown_duration=action_info.get("cooldown_seconds"),
-                    )
+                    action = action_info.get("action", "model_key_failure")
 
                     error_info = {
                         "attempt": attempt_number,
@@ -324,6 +493,72 @@ class FallbackRouter:
                         "error": str(e),
                         "error_type": type(e).__name__,
                     }
+
+                    # Handle fallback_no_cooldown: just fallback without marking key failed
+                    if action == "fallback_no_cooldown":
+                        err_msg = _format_error_for_log(
+                            e,
+                            resolved_route.provider,
+                            resolved_route.model,
+                            api_key=resolved_route.api_key,
+                        )
+                        logger.info(
+                            f"Route failed, falling back (no cooldown): {err_msg}"
+                        )
+                        errors.append(error_info)
+                        attempt_number += 1
+                        break
+
+                    # Handle auto_fix_tool_responses: fix request and retry same route
+                    if action == "auto_fix_tool_responses":
+                        logger.info(
+                            f"Attempting auto-fix for missing tool responses on "
+                            f"{resolved_route.provider}/{resolved_route.model}"
+                        )
+                        fixed_request = (
+                            _fix_missing_tool_results_anthropic(request_data)
+                            if target_protocol == "anthropic"
+                            else _fix_missing_tool_responses(request_data)
+                        )
+                        try:
+                            result = await self._executor.execute(
+                                route=resolved_route,
+                                request_data=fixed_request,
+                                target_protocol=target_protocol,
+                            )
+                            logger.info(
+                                f"Route succeeded after auto-fix: "
+                                f"provider={resolved_route.provider}, "
+                                f"model={resolved_route.model}"
+                            )
+                            print(
+                                f"[OK] Request succeeded (auto-fixed): {logical_model} -> "
+                                f"{resolved_route.provider}/{resolved_route.model} "
+                                f"(attempt {attempt_number})"
+                            )
+                            return result
+                        except Exception as retry_error:
+                            # Auto-fix retry failed, fallback without cooldown
+                            err_msg = _format_error_for_log(
+                                retry_error,
+                                resolved_route.provider,
+                                resolved_route.model,
+                                api_key=resolved_route.api_key,
+                            )
+                            logger.warning(
+                                f"Auto-fix retry failed, falling back: {err_msg}"
+                            )
+                            error_info["error"] = str(retry_error)
+                            errors.append(error_info)
+                            attempt_number += 1
+                            break
+
+                    # For other actions, mark key/provider failed
+                    tracker.mark_failed(
+                        api_key,
+                        action=action,
+                        cooldown_duration=action_info.get("cooldown_seconds"),
+                    )
 
                     if self._is_fallback_worthy_error(e):
                         err_msg = _format_error_for_log(
@@ -621,11 +856,7 @@ class FallbackRouter:
 
                 except Exception as e:
                     action_info = self.resolve_error_action(resolved_route.provider, e)
-                    tracker.mark_failed(
-                        api_key,
-                        action=action_info.get("action", "model_key_failure"),
-                        cooldown_duration=action_info.get("cooldown_seconds"),
-                    )
+                    action = action_info.get("action", "model_key_failure")
 
                     error_info = {
                         "attempt": attempt_number,
@@ -634,6 +865,74 @@ class FallbackRouter:
                         "error": str(e),
                         "error_type": type(e).__name__,
                     }
+
+                    # Handle fallback_no_cooldown: just fallback without marking key failed
+                    if action == "fallback_no_cooldown":
+                        err_msg = _format_error_for_log(
+                            e,
+                            resolved_route.provider,
+                            resolved_route.model,
+                            api_key=api_key,
+                        )
+                        logger.info(
+                            f"Stream failed, falling back (no cooldown): {err_msg}"
+                        )
+                        errors.append(error_info)
+                        attempt_number += 1
+                        break
+
+                    # Handle auto_fix_tool_responses: fix request and retry same route
+                    if action == "auto_fix_tool_responses":
+                        logger.info(
+                            f"Attempting auto-fix for missing tool responses on "
+                            f"{resolved_route.provider}/{resolved_route.model}"
+                        )
+                        fixed_request = (
+                            _fix_missing_tool_results_anthropic(request_data)
+                            if target_protocol == "anthropic"
+                            else _fix_missing_tool_responses(request_data)
+                        )
+                        try:
+                            stream_gen = self._executor.execute_stream(
+                                route=resolved_route,
+                                request_data=fixed_request,
+                                target_protocol=target_protocol,
+                            )
+                            async for chunk in stream_gen:
+                                yield chunk
+                            logger.info(
+                                f"Streaming route succeeded after auto-fix: "
+                                f"provider={resolved_route.provider}, "
+                                f"model={resolved_route.model}"
+                            )
+                            print(
+                                f"[OK] Stream succeeded (auto-fixed): {logical_model} -> "
+                                f"{resolved_route.provider}/{resolved_route.model} "
+                                f"(attempt {attempt_number})"
+                            )
+                            return  # Success!
+                        except Exception as retry_error:
+                            # Auto-fix retry failed, fallback without cooldown
+                            err_msg = _format_error_for_log(
+                                retry_error,
+                                resolved_route.provider,
+                                resolved_route.model,
+                                api_key=api_key,
+                            )
+                            logger.warning(
+                                f"Auto-fix retry failed, falling back: {err_msg}"
+                            )
+                            error_info["error"] = str(retry_error)
+                            errors.append(error_info)
+                            attempt_number += 1
+                            break
+
+                    # For other actions, mark key/provider failed
+                    tracker.mark_failed(
+                        api_key,
+                        action=action,
+                        cooldown_duration=action_info.get("cooldown_seconds"),
+                    )
 
                     if self._is_fallback_worthy_error(e):
                         err_msg = _format_error_for_log(

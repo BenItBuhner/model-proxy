@@ -122,6 +122,7 @@ class TestNoRouteIDs:
             "base_url": None,
             "api_key_env": ["CEREBRAS_API_KEY"],
             "timeout_seconds": None,
+            "cooldown_seconds": None,
         }
 
     def test_model_config_serialization_without_ids(self):
@@ -146,6 +147,7 @@ class TestNoRouteIDs:
             "base_url": None,
             "api_key_env": None,
             "timeout_seconds": None,
+            "cooldown_seconds": None,
         }
 
         assert serialized["model_routings"][0] == expected_route

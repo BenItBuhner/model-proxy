@@ -25,8 +25,8 @@
   },
 
   "request_config": {
-    "timeout_seconds": 60,
-    "max_retries": 3,
+    "timeout_seconds": 180,
+    "max_retries": 50,
     "retry_on_status": [429, 500, 502, 503, 504],
     "default_parameters": {
       "temperature": 1.0,
@@ -46,12 +46,13 @@
 
   "error_handling": {
     "400": {
-      "action": "provider_cooldown",
-      "cooldown_seconds": 600
+      "action": "fallback_no_cooldown"
     },
     "422": {
-      "action": "provider_cooldown",
-      "cooldown_seconds": 600
+      "action": "auto_fix_tool_responses"
+    },
+    "500": {
+      "action": "fallback_no_cooldown"
     },
     "401": {
       "action": "global_key_failure"
