@@ -336,7 +336,7 @@ class FallbackRouter:
         """
         Create a KeyCycleTracker with granular cooldown settings.
         """
-        provider_config = get_provider_config(route_config.provider)
+        provider_config = get_provider_config(route_config.provider) or {}
 
         # 1. Get provider default cooldown
         provider_cooldown = provider_config.get("rate_limiting", {}).get(

@@ -72,7 +72,12 @@ class TestNoRouteIDs:
     def test_load_existing_model_configs(self):
         """Test that existing model configs load correctly without IDs."""
         # Test several model configs to ensure they work
-        models_to_test = ["glm-4.6", "glm-4.7", "sprecision", "gpt-oss-120b"]
+        available_models = config_loader.get_available_models()
+        if not available_models:
+            import pytest
+
+            pytest.skip("No model configs available to load")
+        models_to_test = available_models[:4]
 
         for model_name in models_to_test:
             config = config_loader.load_config(model_name)

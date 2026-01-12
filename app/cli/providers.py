@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
 
-from app.cli.config_manager import ConfigManager, _find_config_dir
+from app.cli.config_manager import ConfigManager
 from app.cli.interactive import (
     UserCancelled,
     ask_batch_addition,
@@ -18,6 +18,7 @@ from app.cli.interactive import (
     display_warning,
     handle_user_cancelled,
 )
+from app.core.config_paths import find_config_file
 
 # Template format mapping
 TEMPLATE_MAP = {
@@ -104,6 +105,16 @@ def _add_provider_interactive_loop(config_manager: ConfigManager) -> None:
             except Exception as e:
                 display_error(f"Failed to load custom config: {e}")
                 continue
+            provider_name = provider_config.get("name")
+            if not provider_name:
+                display_error("Custom config missing required field: name")
+                continue
+            if provider_name in existing_providers:
+                if not ask_yes_no(
+                    f"Provider '{provider_name}' already exists. Overwrite?",
+                    default=False,
+                ):
+                    continue
         else:
             # Load template
             template_name = {
@@ -112,12 +123,10 @@ def _add_provider_interactive_loop(config_manager: ConfigManager) -> None:
                 "Google GenAI/Gemini Format": "gemini_template.json",
                 "Azure OpenAI Format": "azure_template.json",
             }[provider_format]
-
-            config_dir = _find_config_dir()
-            template_path = config_dir / "templates" / template_name
-            if not template_path.exists():
-                # Fallback to current working directory
-                template_path = Path("config/templates") / template_name
+            template_path = find_config_file(Path("templates") / template_name)
+            if not template_path:
+                display_error(f"Template not found: {template_name}")
+                continue
             with open(template_path, "r") as f:
                 template_content = f.read()
 
@@ -324,15 +333,10 @@ def add_provider_non_interactive(
 
     # Load template
     template_name = TEMPLATE_MAP[format_type_lower]
-    config_dir = _find_config_dir()
-    template_path = config_dir / "templates" / template_name
-
-    if not template_path.exists():
-        # Fallback to current working directory
-        template_path = Path("config/templates") / template_name
-        if not template_path.exists():
-            display_error(f"Template not found: {template_path}")
-            return
+    template_path = find_config_file(Path("templates") / template_name)
+    if not template_path:
+        display_error(f"Template not found: {template_name}")
+        return
 
     try:
         with open(template_path, "r") as f:

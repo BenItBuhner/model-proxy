@@ -424,7 +424,10 @@ def get_api_key(provider: str, model: Optional[str] = None) -> Optional[str]:
 
 
 def mark_key_failed(
-    provider: str, key: str, model: Optional[str] = None, cooldown_duration: int = 180
+    provider: str,
+    key: str,
+    model: Optional[str] = None,
+    cooldown_duration: Optional[int] = None,
 ) -> None:
     """
     Mark an API key as failed.
@@ -434,19 +437,20 @@ def mark_key_failed(
         key: The failed API key
         model: If provided, failure is scoped to this model (provider/model).
                If None, failure is global for the provider (e.g. 401).
-        cooldown_duration: Duration in seconds for the cooldown.
+        cooldown_duration: Duration in seconds for the cooldown. Defaults to KEY_COOLDOWN_SECONDS.
     """
     state = _rotation_state[provider]
     now = time.time()
+    duration = KEY_COOLDOWN_SECONDS if cooldown_duration is None else cooldown_duration
     if model:
-        state.model_failed_keys[model][key] = (now, cooldown_duration)
+        state.model_failed_keys[model][key] = (now, duration)
         logger.debug(
-            f"Marked key failed for {provider} model {model} (duration: {cooldown_duration}s)"
+            f"Marked key failed for {provider} model {model} (duration: {duration}s)"
         )
     else:
-        state.failed_keys[key] = (now, cooldown_duration)
+        state.failed_keys[key] = (now, duration)
         logger.debug(
-            f"Marked key failed globally for {provider} (duration: {cooldown_duration}s)"
+            f"Marked key failed globally for {provider} (duration: {duration}s)"
         )
 
 

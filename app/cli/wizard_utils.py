@@ -13,6 +13,16 @@ from typing import Dict, List, Optional, Tuple
 from app.cli.config_manager import ConfigManager
 
 
+def _get_env_value(config_manager: ConfigManager, env_var: str) -> Optional[str]:
+    """
+    Read environment variables, allowing tests to inject via config_manager.env.
+    """
+    env = getattr(config_manager, "env", None)
+    if isinstance(env, dict):
+        return env.get(env_var)
+    return os.getenv(env_var)
+
+
 def get_setup_status(config_manager: ConfigManager) -> Dict:
     """
     Get current setup status and recommendations.
@@ -50,11 +60,11 @@ def get_setup_status(config_manager: ConfigManager) -> Dict:
             if "{INDEX}" in pattern:
                 for i in range(1, 10):
                     env_var = pattern.format(PROVIDER=provider_upper, INDEX=i)
-                    if os.getenv(env_var):
+                    if _get_env_value(config_manager, env_var):
                         api_keys_count += 1
             else:
                 env_var = pattern.format(PROVIDER=provider_upper)
-                if os.getenv(env_var):
+                if _get_env_value(config_manager, env_var):
                     api_keys_count += 1
 
         # Check if this provider has at least one API key
@@ -63,12 +73,12 @@ def get_setup_status(config_manager: ConfigManager) -> Dict:
             if "{INDEX}" in pattern:
                 for i in range(1, 10):
                     env_var = pattern.format(PROVIDER=provider_upper, INDEX=i)
-                    if os.getenv(env_var):
+                    if _get_env_value(config_manager, env_var):
                         has_keys = True
                         break
             else:
                 env_var = pattern.format(PROVIDER=provider_upper)
-                if os.getenv(env_var):
+                if _get_env_value(config_manager, env_var):
                     has_keys = True
                     break
         if has_keys:
@@ -156,12 +166,12 @@ def should_skip_step(step: str, config_manager: ConfigManager) -> bool:
                 if "{INDEX}" in pattern:
                     for i in range(1, 10):
                         env_var = pattern.format(PROVIDER=provider_upper, INDEX=i)
-                        if os.getenv(env_var):
+                        if _get_env_value(config_manager, env_var):
                             has_keys = True
                             break
                 else:
                     env_var = pattern.format(PROVIDER=provider_upper)
-                    if os.getenv(env_var):
+                    if _get_env_value(config_manager, env_var):
                         has_keys = True
                         break
 

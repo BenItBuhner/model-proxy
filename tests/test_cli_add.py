@@ -136,12 +136,18 @@ class TestAddProviderCommand:
         assert "saved successfully" in output.lower() or "ok" in output.lower()
 
         # Verify provider was created
-        provider_file = Path(f"config/providers/{unique_name}.json")
+        from app.cli.config_manager import ConfigManager
+
+        config_manager = ConfigManager()
+        provider_file = config_manager.providers_dir / f"{unique_name}.json"
         assert provider_file.exists()
 
         # Clean up
         if provider_file.exists():
-            provider_file.unlink()
+            try:
+                provider_file.unlink()
+            except PermissionError:
+                pass
 
     def test_add_provider_non_interactive_duplicate_without_overwrite(self):
         """Test that duplicate provider without --overwrite fails."""
@@ -245,7 +251,10 @@ class TestAddModelCommand:
         assert "saved successfully" in output.lower() or "ok" in output.lower()
 
         # Verify model config was created
-        model_file = Path(f"config/models/{unique_name}.json")
+        from app.cli.config_manager import ConfigManager
+
+        config_manager = ConfigManager()
+        model_file = config_manager.models_dir / f"{unique_name}.json"
         assert model_file.exists()
 
         # Verify content
@@ -258,7 +267,10 @@ class TestAddModelCommand:
 
         # Clean up
         if model_file.exists():
-            model_file.unlink()
+            try:
+                model_file.unlink()
+            except PermissionError:
+                pass
 
     def test_add_custom_model_non_interactive(self):
         """Test adding custom model to cache."""
@@ -286,7 +298,7 @@ class TestAddModelCommand:
             assert "added" in output.lower() or "ok" in output.lower()
 
             # Verify model is in cache
-            cache_file = Path("config/models.json")
+            cache_file = config_manager.cache_file
             if cache_file.exists():
                 with open(cache_file) as f:
                     cache = json.load(f)

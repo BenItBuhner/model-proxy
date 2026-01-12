@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from app.core.config_paths import get_config_search_paths, get_writable_config_dir
+
 
 def _find_config_dir() -> Path:
     """
@@ -22,32 +24,8 @@ def _find_config_dir() -> Path:
     Returns:
         Path to config directory (creates if needed)
     """
-    # Package-relative path (for source/editable installs)
-    package_root = Path(__file__).parent.parent.parent
-    package_config = package_root / "config"
-
-    # Locations to search
-    search_paths = [
-        package_config,
-        Path.cwd() / "config",
-        Path.home() / ".model-proxy" / "config",
-    ]
-
-    for path in search_paths:
-        if path.exists() and (path / "providers").exists():
-            return path
-
-    # If no existing config found, use package-relative or create in home
-    if package_config.parent.exists():
-        return package_config
-    else:
-        # For tool installs, use home directory
-        home_config = Path.home() / ".model-proxy" / "config"
-        home_config.mkdir(parents=True, exist_ok=True)
-        (home_config / "providers").mkdir(exist_ok=True)
-        (home_config / "models").mkdir(exist_ok=True)
-        (home_config / "templates").mkdir(exist_ok=True)
-        return home_config
+    # Backward-compatible wrapper for shared config path logic.
+    return get_writable_config_dir()
 
 
 class ConfigManager:
@@ -81,9 +59,11 @@ class ConfigManager:
             config_dir: Path to config directory (default: auto-detect)
         """
         if config_dir is None:
-            self.config_dir = _find_config_dir()
+            self.config_dir = get_writable_config_dir()
+            self.search_paths = get_config_search_paths()
         else:
             self.config_dir = Path(config_dir)
+            self.search_paths = [self.config_dir]
         self.providers_dir = self.config_dir / "providers"
         self.models_dir = self.config_dir / "models"
         self.cache_file = self.config_dir / "models.json"
@@ -96,6 +76,14 @@ class ConfigManager:
         self.providers_dir.mkdir(parents=True, exist_ok=True)
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
+    def _find_config_file(self, relative_path: Path) -> Optional[Path]:
+        """Find a config file by searching this manager's paths."""
+        for root in self.search_paths:
+            candidate = root / relative_path
+            if candidate.exists():
+                return candidate
+        return None
+
     def get_providers(self) -> Dict[str, Dict]:
         """
         Load all provider configurations.
@@ -107,24 +95,26 @@ class ConfigManager:
             FileNotFoundError: If providers directory doesn't exist
             json.JSONDecodeError: If configuration files are invalid JSON
         """
-        providers = {}
+        providers: Dict[str, Dict] = {}
 
-        if not self.providers_dir.exists():
-            return providers
+        for root in self.search_paths:
+            providers_dir = root / "providers"
+            if not providers_dir.exists():
+                continue
 
-        for provider_file in self.providers_dir.glob("*.json"):
-            try:
-                with open(provider_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+            for provider_file in providers_dir.glob("*.json"):
+                try:
+                    with open(provider_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
 
-                # Validate basic structure
-                if "name" in data:
-                    providers[data["name"]] = data
+                    # Prefer the first occurrence by search path precedence.
+                    if "name" in data and data["name"] not in providers:
+                        providers[data["name"]] = data
 
-            except json.JSONDecodeError as e:
-                print(f"Warning: Invalid JSON in {provider_file}: {e}")
-            except Exception as e:
-                print(f"Warning: Could not load provider from {provider_file}: {e}")
+                except json.JSONDecodeError as e:
+                    print(f"Warning: Invalid JSON in {provider_file}: {e}")
+                except Exception as e:
+                    print(f"Warning: Could not load provider from {provider_file}: {e}")
 
         return providers
 
@@ -138,9 +128,10 @@ class ConfigManager:
         Returns:
             Provider configuration or None if not found
         """
-        provider_file = self.providers_dir / f"{provider_name}.json"
-
-        if not provider_file.exists():
+        provider_file = self._find_config_file(
+            Path("providers") / f"{provider_name}.json"
+        )
+        if not provider_file:
             return None
 
         try:
@@ -156,13 +147,14 @@ class ConfigManager:
         Returns:
             Sorted list of model configuration names
         """
-        models = []
+        models = set()
 
-        if not self.models_dir.exists():
-            return models
-
-        for model_file in self.models_dir.glob("*.json"):
-            models.append(model_file.stem)
+        for root in self.search_paths:
+            models_dir = root / "models"
+            if not models_dir.exists():
+                continue
+            for model_file in models_dir.glob("*.json"):
+                models.add(model_file.stem)
 
         return sorted(models)
 
@@ -180,9 +172,8 @@ class ConfigManager:
             FileNotFoundError: If model configuration doesn't exist
             ValueError: If configuration is invalid
         """
-        model_file = self.models_dir / f"{model_name}.json"
-
-        if not model_file.exists():
+        model_file = self._find_config_file(Path("models") / f"{model_name}.json")
+        if not model_file:
             raise FileNotFoundError(f"Model config not found: {model_name}")
 
         try:
@@ -210,9 +201,12 @@ class ConfigManager:
 
         provider_name = provider_data["name"]
         provider_file = self.providers_dir / f"{provider_name}.json"
+        existing_path = self._find_config_file(
+            Path("providers") / f"{provider_name}.json"
+        )
 
-        # Check if provider exists
-        if provider_file.exists() and not overwrite:
+        # Check if provider exists anywhere in the search path
+        if existing_path and not overwrite:
             raise ValueError(
                 f"Provider '{provider_name}' already exists. "
                 f"Use overwrite=True to replace it."
@@ -247,9 +241,10 @@ class ConfigManager:
         self._validate_model_config(config)
 
         model_file = self.models_dir / f"{model_name}.json"
+        existing_path = self._find_config_file(Path("models") / f"{model_name}.json")
 
-        # Check if model exists
-        if model_file.exists() and not overwrite:
+        # Check if model exists anywhere in the search path
+        if existing_path and not overwrite:
             raise ValueError(
                 f"Model '{model_name}' already exists. "
                 f"Use overwrite=True to replace it."
@@ -423,8 +418,10 @@ class ConfigManager:
         Returns:
             True if provider exists
         """
-        provider_file = self.providers_dir / f"{provider_name}.json"
-        return provider_file.exists()
+        return (
+            self._find_config_file(Path("providers") / f"{provider_name}.json")
+            is not None
+        )
 
     def model_config_exists(self, model_name: str) -> bool:
         """
@@ -436,8 +433,7 @@ class ConfigManager:
         Returns:
             True if model configuration exists
         """
-        model_file = self.models_dir / f"{model_name}.json"
-        return model_file.exists()
+        return self._find_config_file(Path("models") / f"{model_name}.json") is not None
 
     def get_config_stats(self) -> Dict:
         """

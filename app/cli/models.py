@@ -641,7 +641,7 @@ def _add_custom_model_interactive_loop(config_manager: ConfigManager) -> None:
 
         try:
             save_cache = ask_yes_no(
-                f"Save {len(pending_cache_additions)} new custom model(s) to the cache (config/models.json)?",
+                f"Save {len(pending_cache_additions)} new custom model(s) to the cache ({config_manager.cache_file})?",
                 default=default_save_cache,
             )
         except UserCancelled:

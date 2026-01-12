@@ -6,7 +6,9 @@ Loads and caches JSON configurations from config/models/ directory.
 import json
 import time
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
+
+from app.core.config_paths import get_config_search_paths
 from app.routing.models import ModelRoutingConfig
 
 
@@ -18,17 +20,31 @@ class ModelConfigLoader:
         Initialize the config loader.
 
         Args:
-            config_dir: Directory containing model JSON configs. Defaults to config/models/
+            config_dir: Directory containing model JSON configs. Defaults to config search paths.
         """
         if config_dir is None:
-            # Default to config/models relative to project root
-            self.config_dir = Path(__file__).parent.parent.parent / "config" / "models"
+            self.search_paths = get_config_search_paths()
+            self._paths_are_model_dirs = False
         else:
-            self.config_dir = config_dir
+            # Backward-compatible: config_dir points directly at a models directory.
+            self.search_paths = [config_dir]
+            self._paths_are_model_dirs = True
 
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._cache_timestamps: Dict[str, float] = {}
         self._config_cache: Dict[str, ModelRoutingConfig] = {}
+        self._cache_paths: Dict[str, Path] = {}
+
+    def _find_config_path(self, logical_model: str) -> Optional[Path]:
+        """Find a model config across all search paths."""
+        for root in self.search_paths:
+            if self._paths_are_model_dirs:
+                candidate = root / f"{logical_model}.json"
+            else:
+                candidate = root / "models" / f"{logical_model}.json"
+            if candidate.exists():
+                return candidate
+        return None
 
     def load_config(
         self, logical_model: str, force_reload: bool = False
@@ -47,18 +63,25 @@ class ModelConfigLoader:
             FileNotFoundError: If config file doesn't exist
             ValueError: If config is invalid
         """
-        config_path = self.config_dir / f"{logical_model}.json"
+        config_path = self._find_config_path(logical_model)
 
         # Check if we have a valid cached version
-        if not force_reload and logical_model in self._config_cache:
-            if self._is_cache_valid(logical_model, config_path):
+        if (
+            not force_reload
+            and logical_model in self._config_cache
+            and config_path is not None
+        ):
+            cached_path = self._cache_paths.get(logical_model)
+            if cached_path == config_path and self._is_cache_valid(
+                logical_model, config_path
+            ):
                 return self._config_cache[logical_model]
 
         # Load from disk
-        if not config_path.exists():
+        if not config_path:
             available_models = self._get_available_models()
             raise FileNotFoundError(
-                f"Configuration file not found for model '{logical_model}': {config_path}. "
+                f"Configuration file not found for model '{logical_model}'. "
                 f"Available models: {available_models}"
             )
 
@@ -84,6 +107,7 @@ class ModelConfigLoader:
         # Cache the result
         self._config_cache[logical_model] = config
         self._cache_timestamps[logical_model] = time.time()
+        self._cache_paths[logical_model] = config_path
 
         return config
 
@@ -102,14 +126,14 @@ class ModelConfigLoader:
 
     def _get_available_models(self) -> list[str]:
         """Get list of available model configurations."""
-        if not self.config_dir.exists():
-            return []
-
-        models = []
-        for file_path in self.config_dir.glob("*.json"):
-            if file_path.is_file():
-                model_name = file_path.stem
-                models.append(model_name)
+        models = set()
+        for root in self.search_paths:
+            models_dir = root if self._paths_are_model_dirs else root / "models"
+            if not models_dir.exists():
+                continue
+            for file_path in models_dir.glob("*.json"):
+                if file_path.is_file():
+                    models.add(file_path.stem)
 
         return sorted(models)
 
