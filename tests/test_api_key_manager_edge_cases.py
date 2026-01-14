@@ -6,16 +6,16 @@ Tests round-robin key selection, KeyCycleTracker, and cooldown behavior.
 from unittest.mock import patch
 
 from app.core.api_key_manager import (
-    get_api_key,
-    mark_key_failed,
-    get_available_keys,
-    reset_failed_keys,
-    reset_rotation_state,
-    get_rotation_state,
-    _parse_provider_keys,
-    KeyCycleTracker,
     KEY_COOLDOWN_SECONDS,
     MAX_KEY_RETRY_CYCLES,
+    KeyCycleTracker,
+    _parse_provider_keys,
+    get_api_key,
+    get_available_keys,
+    get_rotation_state,
+    mark_key_failed,
+    reset_failed_keys,
+    reset_rotation_state,
 )
 
 
@@ -574,4 +574,174 @@ def test_same_request_bypasses_cooldown(monkeypatch):
         assert key2 == "key1"  # Same key, within same request
 
     # Clean up
+    reset_rotation_state("openai")
+
+
+def test_string_cooldown_conversion_in_mark_key_failed():
+    """Test that cooldown_duration strings are properly converted to ints in mark_key_failed."""
+    import os
+
+    from app.core.api_key_manager import _rotation_state
+
+    os.environ["OPENAI_API_KEY_1"] = "key1"
+    os.environ["OPENAI_API_KEY_2"] = "key2"
+
+    reset_rotation_state("openai")
+
+    # Test with string cooldown (simulating JSON config)
+    mark_key_failed("openai", "key1", cooldown_duration="600")
+
+    # Verify the stored duration is an integer
+    state = _rotation_state["openai"]
+    assert "key1" in state.failed_keys
+    fail_time, duration = state.failed_keys["key1"]
+    assert isinstance(duration, int), f"Expected int, got {type(duration)}"
+    assert duration == 600
+
+    # Verify comparison works (this was the original bug)
+    assert (1234567890.0 - fail_time) < duration
+
+    reset_rotation_state("openai")
+
+
+def test_string_cooldown_conversion_in_tracker_init():
+    """Test that route_cooldown and provider_cooldown strings are converted to ints in KeyCycleTracker.__init__."""
+    import os
+
+    from app.core.api_key_manager import KeyCycleTracker
+
+    os.environ["OPENAI_API_KEY_1"] = "key1"
+
+    reset_rotation_state("openai")
+
+    # Test with string cooldown values (simulating JSON config)
+    tracker = KeyCycleTracker(
+        provider="openai",
+        model="test-model",
+        provider_cooldown="300",
+        route_cooldown="600",
+    )
+
+    # Verify cooldown values are integers
+    assert isinstance(tracker.provider_cooldown, int), (
+        f"Expected int for provider_cooldown, got {type(tracker.provider_cooldown)}"
+    )
+    assert isinstance(tracker.route_cooldown, int), (
+        f"Expected int for route_cooldown, got {type(tracker.route_cooldown)}"
+    )
+    assert tracker.provider_cooldown == 300
+    assert tracker.route_cooldown == 600
+
+    # Verify comparison works correctly
+    assert tracker.provider_cooldown > 0
+    assert tracker.route_cooldown > 0
+
+    reset_rotation_state("openai")
+
+
+def test_string_cooldown_conversion_in_mark_failed():
+    """Test that string cooldown_duration is properly converted in KeyCycleTracker.mark_failed."""
+    import os
+
+    from app.core.api_key_manager import KeyCycleTracker, _rotation_state
+
+    os.environ["OPENAI_API_KEY_1"] = "key1"
+
+    reset_rotation_state("openai")
+
+    tracker = KeyCycleTracker(
+        provider="openai", model="test-model", route_cooldown="600"
+    )
+
+    # Get a key and mark it failed with string cooldown
+    key = tracker.get_next_key()
+    tracker.mark_failed(key, action="model_key_failure", cooldown_duration="900")
+
+    # Verify the stored duration is an integer
+    state = _rotation_state["openai"]
+    route_key = "openai/test-model"
+    assert route_key in state.model_failed_keys
+    assert key in state.model_failed_keys[route_key]
+    fail_time, duration = state.model_failed_keys[route_key][key]
+    assert isinstance(duration, int), f"Expected int, got {type(duration)}"
+    assert duration == 900
+
+    # Verify comparison works (this would fail before the fix)
+    current_time = fail_time + 1.0
+    assert (current_time - fail_time) < duration
+
+    reset_rotation_state("openai")
+
+
+def test_stored_string_cooldown_comparison():
+    """
+    Test that comparisons work even when string cooldown values are stored directly.
+
+    This tests the _safe_cooldown_duration helper that converts values at comparison time,
+    which handles cases where string values might have been stored before the fix was applied.
+    """
+    import os
+    import time
+
+    from app.core.api_key_manager import (
+        KeyCycleTracker,
+        _rotation_state,
+        _safe_cooldown_duration,
+    )
+
+    os.environ["OPENAI_API_KEY_1"] = "key1"
+    os.environ["OPENAI_API_KEY_2"] = "key2"
+
+    reset_rotation_state("openai")
+
+    # Manually store a string cooldown value (simulating old/buggy data)
+    state = _rotation_state["openai"]
+    now = time.time()
+    state.failed_keys["key1"] = (now, "600")  # String instead of int!
+    state.model_failed_keys["openai/test-model"]["key2"] = (now, "300")  # String!
+
+    # Verify _safe_cooldown_duration handles string values
+    assert _safe_cooldown_duration("600") == 600
+    assert _safe_cooldown_duration("300") == 300
+    assert _safe_cooldown_duration(600) == 600
+    assert _safe_cooldown_duration(None) == KEY_COOLDOWN_SECONDS
+    assert _safe_cooldown_duration("invalid") == KEY_COOLDOWN_SECONDS
+
+    # Create a tracker and try to get keys - this should NOT raise TypeError
+    try:
+        tracker = KeyCycleTracker(provider="openai", model="test-model")
+
+        # This internally calls get_next_key which does comparisons
+        # with the stored string cooldown values
+        key = tracker.get_next_key()
+
+        # Key should be None since both keys are in cooldown
+        assert key is None, f"Expected None (keys in cooldown), got {key}"
+
+    except TypeError as e:
+        if "not supported between" in str(e):
+            assert False, f"Comparison with stored string value failed: {e}"
+        raise
+
+    # Also test all_keys_in_cooldown with string values stored
+    try:
+        tracker2 = KeyCycleTracker(provider="openai", model="test-model")
+        result = tracker2.all_keys_in_cooldown()
+        assert result is True, "Expected all keys to be in cooldown"
+    except TypeError as e:
+        if "not supported between" in str(e):
+            assert False, f"all_keys_in_cooldown failed with stored string value: {e}"
+        raise
+
+    # Test get_api_key function as well
+    from app.core.api_key_manager import get_api_key
+
+    try:
+        key = get_api_key("openai", model="test-model")
+        assert key is None, "Expected None since keys are in cooldown"
+    except TypeError as e:
+        if "not supported between" in str(e):
+            assert False, f"get_api_key failed with stored string value: {e}"
+        raise
+
     reset_rotation_state("openai")

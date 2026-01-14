@@ -27,7 +27,16 @@ class ProviderAPIError(Exception):
 
     def __init__(self, message: str, status: int, body: Optional[str] = None):
         super().__init__(message)
-        self.status = status
+        # Ensure status is an integer (API responses may return string codes)
+        if isinstance(status, int):
+            self.status = status
+        elif status is None:
+            self.status = 500
+        else:
+            try:
+                self.status = int(status)
+            except (TypeError, ValueError):
+                self.status = 500
         self.body = body
 
 

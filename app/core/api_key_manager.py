@@ -29,6 +29,29 @@ KEY_COOLDOWN_SECONDS = int(os.getenv("KEY_COOLDOWN_SECONDS", "180"))
 MAX_KEY_RETRY_CYCLES = int(os.getenv("MAX_KEY_RETRY_CYCLES", "1"))
 
 
+def _safe_cooldown_duration(duration) -> int:
+    """
+    Safely convert a cooldown duration to an integer.
+
+    Handles cases where cooldown_duration might be stored as a string
+    (e.g., from JSON config) and needs to be compared with float time values.
+
+    Args:
+        duration: The cooldown duration value (may be int, str, or other)
+
+    Returns:
+        Integer cooldown duration, defaults to KEY_COOLDOWN_SECONDS if conversion fails
+    """
+    if isinstance(duration, int):
+        return duration
+    if duration is None:
+        return KEY_COOLDOWN_SECONDS
+    try:
+        return int(duration)
+    except (TypeError, ValueError):
+        return KEY_COOLDOWN_SECONDS
+
+
 @dataclass
 class KeyRotationState:
     """Tracks per-provider key rotation state (global, persists across requests)."""
@@ -147,6 +170,18 @@ class KeyCycleTracker:
         self.max_cycles = max_cycles if max_cycles is not None else MAX_KEY_RETRY_CYCLES
         self.provider_cooldown = provider_cooldown or KEY_COOLDOWN_SECONDS
         self.route_cooldown = route_cooldown or self.provider_cooldown
+
+        # Ensure cooldown values are integers (they might come as strings from JSON config)
+        if not isinstance(self.provider_cooldown, int):
+            try:
+                self.provider_cooldown = int(self.provider_cooldown)
+            except (TypeError, ValueError):
+                self.provider_cooldown = KEY_COOLDOWN_SECONDS
+        if not isinstance(self.route_cooldown, int):
+            try:
+                self.route_cooldown = int(self.route_cooldown)
+            except (TypeError, ValueError):
+                self.route_cooldown = self.provider_cooldown
         self.current_cycle = 0
         self.keys_tried_this_cycle: Set[str] = set()
         self._keys_attempted: Set[str] = set()  # All keys attempted by this tracker
@@ -207,7 +242,9 @@ class KeyCycleTracker:
                     fail_info = state.failed_keys.get(candidate)
                     if fail_info:
                         fail_time, cooldown_duration = fail_info
-                        if (current_time - fail_time) < cooldown_duration:
+                        if (current_time - fail_time) < _safe_cooldown_duration(
+                            cooldown_duration
+                        ):
                             continue  # Still in global cooldown
 
                     # 2. Check Unified Model-Scoped Failures (if model context available)
@@ -216,7 +253,9 @@ class KeyCycleTracker:
                         fail_info = model_fails.get(candidate)
                         if fail_info:
                             fail_time, cooldown_duration = fail_info
-                            if (current_time - fail_time) < cooldown_duration:
+                            if (current_time - fail_time) < _safe_cooldown_duration(
+                                cooldown_duration
+                            ):
                                 continue  # Still in model-scoped cooldown
 
             # Key is available
@@ -280,7 +319,9 @@ class KeyCycleTracker:
             fail_info = state.failed_keys.get(key)
             if fail_info:
                 fail_time, cooldown_duration = fail_info
-                if (current_time - fail_time) < cooldown_duration:
+                if (current_time - fail_time) < _safe_cooldown_duration(
+                    cooldown_duration
+                ):
                     continue  # In global cooldown
 
             # Key is not in global cooldown. Now check model cooldown.
@@ -290,7 +331,9 @@ class KeyCycleTracker:
                 )
                 if model_fail_info:
                     fail_time, cooldown_duration = model_fail_info
-                    if (current_time - fail_time) < cooldown_duration:
+                    if (current_time - fail_time) < _safe_cooldown_duration(
+                        cooldown_duration
+                    ):
                         continue  # In model-scoped cooldown
 
             return False  # Found at least one available key
@@ -405,7 +448,7 @@ def get_api_key(provider: str, model: Optional[str] = None) -> Optional[str]:
         fail_info = state.failed_keys.get(candidate_key)
         if fail_info:
             fail_time, cooldown_duration = fail_info
-            if (current_time - fail_time) < cooldown_duration:
+            if (current_time - fail_time) < _safe_cooldown_duration(cooldown_duration):
                 continue
 
         # 2. Check model-scoped cooldown
@@ -414,7 +457,9 @@ def get_api_key(provider: str, model: Optional[str] = None) -> Optional[str]:
             fail_info = model_fails.get(candidate_key)
             if fail_info:
                 fail_time, cooldown_duration = fail_info
-                if (current_time - fail_time) < cooldown_duration:
+                if (current_time - fail_time) < _safe_cooldown_duration(
+                    cooldown_duration
+                ):
                     continue
 
         state.last_used_index = next_index
@@ -442,6 +487,13 @@ def mark_key_failed(
     state = _rotation_state[provider]
     now = time.time()
     duration = KEY_COOLDOWN_SECONDS if cooldown_duration is None else cooldown_duration
+    # Ensure cooldown_duration is an integer (it might come as a string from JSON config)
+    if duration is not None and not isinstance(duration, int):
+        try:
+            duration = int(duration)
+        except (TypeError, ValueError):
+            # If conversion fails, use the default
+            duration = KEY_COOLDOWN_SECONDS
     if model:
         state.model_failed_keys[model][key] = (now, duration)
         logger.debug(

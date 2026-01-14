@@ -16,15 +16,15 @@ from app.core.api_key_manager import (
     KeyCycleTracker,
     get_available_keys,
 )
-from app.core.provider_config import get_provider_wire_protocol, get_provider_config
+from app.core.provider_config import get_provider_config, get_provider_wire_protocol
 from app.routing.config_loader import config_loader
 from app.routing.executor import RouteExecutionError, RouteExecutor, get_executor
 from app.routing.models import (
     Attempt,
-    ResolvedRoute,
-    RoutingError,
-    RouteConfig,
     ModelRoutingConfig,
+    ResolvedRoute,
+    RouteConfig,
+    RoutingError,
 )
 
 logger = logging.getLogger("fallback_router")
@@ -312,6 +312,13 @@ class FallbackRouter:
 
         if status_code is None:
             return {"action": "model_key_failure"}
+
+        # Ensure status_code is an integer for comparison (API may return string codes)
+        if not isinstance(status_code, int):
+            try:
+                status_code = int(status_code)
+            except (TypeError, ValueError):
+                return {"action": "model_key_failure"}
 
         config = get_provider_config(provider_name)
         error_handling = (config or {}).get("error_handling", {})
@@ -1213,6 +1220,12 @@ class FallbackRouter:
         if hasattr(error, "status"):
             status = error.status
             if status is not None:
+                # Ensure status is an integer for comparison (API may return string codes)
+                if not isinstance(status, int):
+                    try:
+                        status = int(status)
+                    except (TypeError, ValueError):
+                        status = 500  # Default to 500 if conversion fails
                 # 401/403 are auth errors - likely permanent issues with this key
                 # Don't fallback to same provider with different key for auth errors
                 if status in (401, 403):
@@ -1223,8 +1236,15 @@ class FallbackRouter:
 
         # Check for RouteExecutionError
         if isinstance(error, RouteExecutionError):
-            if error.status_code:
-                return 400 <= error.status_code < 600
+            status_code = error.status_code
+            if status_code:
+                # Ensure status_code is an integer for comparison
+                if not isinstance(status_code, int):
+                    try:
+                        status_code = int(status_code)
+                    except (TypeError, ValueError):
+                        status_code = 500
+                return 400 <= status_code < 600
             return True  # Default to allowing fallback for execution errors
 
         # Check for aiohttp client errors (network issues)
