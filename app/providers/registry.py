@@ -51,6 +51,7 @@ class ProviderRegistry:
                 "cloudflare": OpenAIProvider,
                 "chutes": OpenAIProvider,
                 "longcat": OpenAIProvider,
+                "zai": OpenAIProvider,
                 # Gemini uses dedicated OpenAI-compatible provider
                 "gemini": GeminiOpenAIProvider,
                 # Anthropic provider
