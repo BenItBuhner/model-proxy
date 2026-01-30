@@ -956,10 +956,11 @@ function deleteApiKey(providerName, keyIndex) {
 
 // Export/Import
 async function exportConfig() {
-    const includeEnv = true; // Always include environment variables
-    
     try {
-        const data = await apiCall(`/export?include_env=${includeEnv}`);
+        const data = await apiCall('/export', {
+            method: 'POST',
+            body: { include_env: true }
+        });
         elements.exportPreview.textContent = JSON.stringify(data, null, 2);
         elements.exportPreview.classList.remove('hidden');
         
