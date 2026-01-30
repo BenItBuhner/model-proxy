@@ -492,8 +492,23 @@ async def import_setup(
         env_content = "\n".join(env_lines)
         results["env_file"] = env_content
         results["env_filename"] = ".env"
+
+        # Apply environment variables immediately so keys are available without restart
+        for var, value in env_vars.items():
+            if value is not None:
+                os.environ[var] = str(value)
+
+        for provider_keys in api_keys.values():
+            for key_info in provider_keys:
+                env_var = key_info.get("env_var")
+                value = key_info.get("value")
+                if env_var and value is not None:
+                    os.environ[env_var] = str(value)
+
         results["note"] = (
-            f"Imported {results['providers_imported']} providers and {results['models_imported']} models with {sum(len(keys) for keys in api_keys.values())} API keys. .env file generated with all values."
+            f"Imported {results['providers_imported']} providers and {results['models_imported']} models "
+            f"with {sum(len(keys) for keys in api_keys.values())} API keys. "
+            "API keys are now active in this running server. A .env file was generated for persistence."
         )
 
         return results
