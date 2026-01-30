@@ -76,55 +76,57 @@ def export_setup(
             else:
                 env_vars[var] = value
 
-    # Build export data
+    # Collect ALL API keys and environment variables
+    api_keys = {}
+    all_env_vars = {}
+
+    for provider in providers_list:
+        provider_name = provider["name"]
+        provider_upper = provider_name.upper()
+        patterns = provider.get("api_keys", {}).get("env_var_patterns", [])
+        keys = []
+
+        for pattern in patterns:
+            if "{INDEX}" in pattern:
+                for i in range(1, 21):  # Check up to 20 keys
+                    env_var = pattern.format(PROVIDER=provider_upper, INDEX=i)
+                    value = os.getenv(env_var)
+                    if value:
+                        keys.append({"env_var": env_var, "value": value})
+                        all_env_vars[env_var] = value
+            else:
+                env_var = pattern.format(PROVIDER=provider_upper)
+                value = os.getenv(env_var)
+                if value:
+                    keys.append({"env_var": env_var, "value": value})
+                    all_env_vars[env_var] = value
+
+        if keys:
+            api_keys[provider_name] = keys
+
+    # Add other important env vars
+    for var in safe_vars:
+        value = os.getenv(var)
+        if value:
+            all_env_vars[var] = value
+
+    # Build export data with ALL API keys
     export_data = {
         "version": "1.0.0",
         "exported_at": datetime.now().isoformat(),
         "metadata": {
             "total_providers": len(providers_list),
             "total_models": len(models_list),
-            "note": "API keys are not included for security. Re-enter keys on target device.",
+            "total_api_keys": sum(len(keys) for keys in api_keys.values()),
+            "note": "Full configuration export including all API keys. Store securely!",
         },
         "setup": {
             "providers": providers_list,
             "models": models_list,
-            "environment": env_vars,
+            "environment": all_env_vars,
+            "api_keys": api_keys,
         },
     }
-
-    # Include keys only if explicitly requested (not recommended)
-    if include_keys:
-        display_warning("Including API keys in export is not recommended for security!")
-        if not typer.confirm("Are you sure you want to include API keys?"):
-            include_keys = False
-
-    if include_keys:
-        api_keys = {}
-        for provider in providers_list:
-            provider_name = provider["name"]
-            patterns = provider.get("api_keys", {}).get("env_var_patterns", [])
-            keys = []
-
-            for pattern in patterns:
-                if "{INDEX}" in pattern:
-                    for i in range(1, 10):  # Check up to 9 keys
-                        env_var = pattern.format(
-                            PROVIDER=provider_name.upper(), INDEX=i
-                        )
-                        value = os.getenv(env_var)
-                        if value:
-                            keys.append({"env_var": env_var, "value": value})
-                else:
-                    env_var = pattern.format(PROVIDER=provider_name.upper())
-                    value = os.getenv(env_var)
-                    if value:
-                        keys.append({"env_var": env_var, "value": value})
-
-            if keys:
-                api_keys[provider_name] = keys
-
-        export_data["setup"]["api_keys"] = api_keys
-        export_data["metadata"]["note"] = "API keys included. Store this file securely!"
 
     # Output
     json_output = json.dumps(export_data, indent=2)

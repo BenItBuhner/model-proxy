@@ -289,16 +289,10 @@ async def get_provider_keys_status(
 
 @router.post("/api/export")
 async def export_setup(
-    include_env: bool = Query(
-        default=True, description="Include environment variables"
-    ),
     auth: bool = Depends(verify_auth_token),
 ):
     """
-    Export the entire setup configuration as JSON.
-
-    Note: API keys are NOT included in the export for security.
-    Users must re-enter API keys on the target device.
+    Export the entire setup configuration as JSON including all API keys.
     """
     try:
         # Get all providers
@@ -315,27 +309,52 @@ async def export_setup(
             except Exception:
                 pass
 
-        # Get environment variables (excluding API keys)
+        # Get ALL environment variables including API keys
         env_vars = {}
-        if include_env:
-            # Include safe environment variables
-            safe_vars = [
-                "CLIENT_API_KEY",
-                "KEY_COOLDOWN_SECONDS",
-                "MAX_KEY_RETRY_CYCLES",
-                "LOG_LEVEL",
-                "VERBOSE_HTTP_ERRORS",
-                "CORS_ORIGINS",
-                "FAIL_ON_STARTUP_VALIDATION",
-            ]
-            for var in safe_vars:
-                value = os.getenv(var)
-                if value:
-                    # For CLIENT_API_KEY, only include that it exists
-                    if var == "CLIENT_API_KEY":
-                        env_vars[var] = "[SET]"
-                    else:
-                        env_vars[var] = value
+        api_keys = {}
+
+        for provider in providers_list:
+            provider_name = provider.get("name", "")
+            provider_upper = provider_name.upper()
+            patterns = provider.get("api_keys", {}).get("env_var_patterns", [])
+            provider_keys = []
+
+            for pattern in patterns:
+                if "{INDEX}" in pattern:
+                    # Check for indexed keys (up to 20)
+                    for i in range(1, 21):
+                        env_var = pattern.replace("{PROVIDER}", provider_upper).replace(
+                            "{INDEX}", str(i)
+                        )
+                        value = os.getenv(env_var)
+                        if value:
+                            env_vars[env_var] = value
+                            provider_keys.append({"env_var": env_var, "value": value})
+                else:
+                    env_var = pattern.replace("{PROVIDER}", provider_upper)
+                    value = os.getenv(env_var)
+                    if value:
+                        env_vars[env_var] = value
+                        provider_keys.append({"env_var": env_var, "value": value})
+
+            if provider_keys:
+                api_keys[provider_name] = provider_keys
+
+        # Also get other important env vars
+        other_vars = [
+            "CLIENT_API_KEY",
+            "KEY_COOLDOWN_SECONDS",
+            "MAX_KEY_RETRY_CYCLES",
+            "LOG_LEVEL",
+            "VERBOSE_HTTP_ERRORS",
+            "CORS_ORIGINS",
+            "RATE_LIMIT_REQUESTS_PER_MINUTE",
+            "FAIL_ON_STARTUP_VALIDATION",
+        ]
+        for var in other_vars:
+            value = os.getenv(var)
+            if value:
+                env_vars[var] = value
 
         export_data = {
             "version": "1.0.0",
@@ -343,12 +362,14 @@ async def export_setup(
             "metadata": {
                 "total_providers": len(providers_list),
                 "total_models": len(models_list),
-                "note": "API keys are not included. Re-enter keys on target device.",
+                "total_api_keys": sum(len(keys) for keys in api_keys.values()),
+                "note": "Full configuration export including all API keys. Store securely!",
             },
             "setup": {
                 "providers": providers_list,
                 "models": models_list,
                 "environment": env_vars,
+                "api_keys": api_keys,
             },
         }
 
@@ -417,8 +438,63 @@ async def import_setup(
                     f"Model '{model.get('logical_name', 'unknown')}': {str(e)}"
                 )
 
-        # Note about API keys
-        results["note"] = "Providers and models imported. Remember to add API keys!"
+        # Get environment variables and API keys from import
+        env_vars = setup.get("environment", {})
+        api_keys = setup.get("api_keys", {})
+
+        # Build complete .env file content with all values
+        env_lines = []
+        env_lines.append("# ============================================")
+        env_lines.append("# Model-Proxy Configuration")
+        env_lines.append("# Generated from import - all values included")
+        env_lines.append("# ============================================")
+        env_lines.append("")
+
+        # Add client API key first
+        if "CLIENT_API_KEY" in env_vars:
+            env_lines.append("# Client Authentication (REQUIRED)")
+            env_lines.append(f"CLIENT_API_KEY={env_vars['CLIENT_API_KEY']}")
+            env_lines.append("")
+
+        # Add all API keys by provider
+        if api_keys:
+            env_lines.append("# Provider API Keys")
+            env_lines.append("")
+            for provider_name, keys in api_keys.items():
+                provider = next(
+                    (p for p in providers if p.get("name") == provider_name), None
+                )
+                display_name = (
+                    provider.get("display_name", provider_name)
+                    if provider
+                    else provider_name
+                )
+                env_lines.append(f"# {display_name}")
+                for key_info in keys:
+                    env_lines.append(f"{key_info['env_var']}={key_info['value']}")
+                env_lines.append("")
+
+        # Add other settings
+        env_lines.append("# Settings")
+        settings_vars = [
+            "KEY_COOLDOWN_SECONDS",
+            "MAX_KEY_RETRY_CYCLES",
+            "LOG_LEVEL",
+            "VERBOSE_HTTP_ERRORS",
+            "CORS_ORIGINS",
+            "RATE_LIMIT_REQUESTS_PER_MINUTE",
+            "FAIL_ON_STARTUP_VALIDATION",
+        ]
+        for var in settings_vars:
+            if var in env_vars and var != "CLIENT_API_KEY":
+                env_lines.append(f"{var}={env_vars[var]}")
+
+        env_content = "\n".join(env_lines)
+        results["env_file"] = env_content
+        results["env_filename"] = ".env"
+        results["note"] = (
+            f"Imported {results['providers_imported']} providers and {results['models_imported']} models with {sum(len(keys) for keys in api_keys.values())} API keys. .env file generated with all values."
+        )
 
         return results
     except Exception as e:

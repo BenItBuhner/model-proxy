@@ -1019,7 +1019,24 @@ async function importConfig() {
             body: state.importData
         });
         
-        showToast(`Imported ${result.providers_imported} providers and ${result.models_imported} models`, 'success');
+        // Show success message
+        showToast(result.note, 'success');
+        
+        // Download the complete .env file with all API keys
+        if (result.env_file) {
+            const envBlob = new Blob([result.env_file], { type: 'text/plain' });
+            const envUrl = URL.createObjectURL(envBlob);
+            const a = document.createElement('a');
+            a.href = envUrl;
+            a.download = result.env_filename || '.env';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(envUrl);
+            
+            showToast('Complete .env file downloaded with all API keys! Place it in your project root and restart the server.', 'info', 15000);
+        }
+        
         await loadAllData();
         
         elements.importFile.value = '';
