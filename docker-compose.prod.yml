@@ -1,46 +1,42 @@
 version: "3.8"
+
 services:
   api:
     build: .
     ports:
       - "9876:9876"
     restart: always
+    # Production command with multiple workers
     command:
       [
         "model-proxy",
         "start",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "9876",
-        "--workers",
-        "4",
-        "--log-level",
-        "info",
+        "--host", "0.0.0.0",
+        "--port", "9876",
+        "--workers", "4",
+        "--log-level", "info",
       ]
     environment:
-      - CLIENT_API_KEY=${CLIENT_API_KEY}
-      - NAHCROF_API_KEY=${NAHCROF_API_KEY}
-      - GEMINI_API_KEY_1=${GEMINI_API_KEY_1}
-      - GEMINI_API_KEY_2=${GEMINI_API_KEY_2}
-      - GEMINI_API_KEY_3=${GEMINI_API_KEY_3}
-      - GEMINI_API_KEY_4=${GEMINI_API_KEY_4}
-      - GEMINI_API_KEY_5=${GEMINI_API_KEY_5}
-      - GEMINI_API_KEY_6=${GEMINI_API_KEY_6}
-      - GEMINI_API_KEY_7=${GEMINI_API_KEY_7}
-      - GEMINI_API_KEY_8=${GEMINI_API_KEY_8}
-      - GEMINI_API_KEY_9=${GEMINI_API_KEY_9}
-      - GEMINI_API_KEY_10=${GEMINI_API_KEY_10}
-      - GEMINI_API_KEY_12=${GEMINI_API_KEY_12}
-      - CEREBRAS_API_KEY_1=${CEREBRAS_API_KEY_1}
-      - CEREBRAS_API_KEY_2=${CEREBRAS_API_KEY_2}
-      - CEREBRAS_API_KEY_3=${CEREBRAS_API_KEY_3}
-      - GROQ_API_KEY_1=${GROQ_API_KEY_1}
-      - GROQ_API_KEY_2=${GROQ_API_KEY_2}
-      - GROQ_API_KEY_3=${GROQ_API_KEY_3}
-      - GROQ_API_KEY_4=${GROQ_API_KEY_4}
-      - MISTRAL_API_KEY_1=${MISTRAL_API_KEY_1}
-      - MISTRAL_API_KEY_2=${MISTRAL_API_KEY_2}
-      - OPENROUTER_API_KEY_1=${OPENROUTER_API_KEY_1}
-      - OPENROUTER_API_KEY_2=${OPENROUTER_API_KEY_2}
-      - OPENROUTER_API_KEY_3=${OPENROUTER_API_KEY_3}
+      # Only required env var - all API keys come from .env file
+      - CLIENT_API_KEY=${CLIENT_API_KEY:?Required - set in .env file}
+    
+    volumes:
+      # Mount .env file with all API keys
+      - ./.env:/app/.env:ro
+      # Persist configuration across container restarts
+      - model-proxy-config:/app/config
+      # Persist database for request logging
+      - model-proxy-data:/app/data
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9876/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  model-proxy-config:
+    driver: local
+  model-proxy-data:
+    driver: local

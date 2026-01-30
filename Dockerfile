@@ -4,23 +4,30 @@ FROM python:3.12-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Install uv for fast package management
-RUN pip install uv
+# Install system dependencies and uv
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install uv
 
-# Copy the dependency files to leverage Docker cache
+# Copy dependency files first for better Docker layer caching
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv for better performance
+# Install dependencies using uv
 RUN uv sync --frozen
 
-# Copy the content of the local src directory to the working directory
+# Copy the application code
 COPY . .
 
-# Make the CLI entry points available
+# Create necessary directories for persistent storage
+RUN mkdir -p /app/config/providers /app/config/models /app/config/templates
+
+# Install the package in editable mode
 RUN uv pip install -e .
 
-# Specify the command to run on container startup using the model-proxy CLI
-# These flags can be overridden at runtime, e.g.:
-# docker run model-proxy start --port 8000
-# or via docker-compose environment variables
+# Expose the default port
+EXPOSE 9876
+
+# Specify the command to run on container startup
+# The setup UI will be available at http://localhost:9876/setup/
 CMD ["model-proxy", "start", "--host", "0.0.0.0", "--port", "9876"]

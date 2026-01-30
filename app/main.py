@@ -19,6 +19,7 @@ from app.routers.health import router as health_router
 
 # Import routers AFTER environment is loaded (they depend on auth which uses CLIENT_API_KEY)
 from app.routers.openai import router as openai_router
+from app.setup_ui import router as setup_ui_router
 
 # Create all database tables
 models.Base.metadata.create_all(bind=engine)
@@ -85,3 +86,14 @@ app.add_middleware(LoggingMiddleware)
 app.include_router(openai_router)
 app.include_router(anthropic_router)
 app.include_router(health_router)
+app.include_router(setup_ui_router)
+
+# Mount static files for setup UI
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
+static_dir = Path(__file__).parent / "setup_ui" / "static"
+if static_dir.exists():
+    app.mount(
+        "/setup/static", StaticFiles(directory=str(static_dir)), name="setup_static"
+    )

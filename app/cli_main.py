@@ -386,6 +386,66 @@ def config_validate():
         raise typer.Exit(1)
 
 
+@config_app.command("export")
+def config_export(
+    output: Annotated[
+        Optional[str],
+        Option("--output", "-o", help="Output file path (default: print to stdout"),
+    ] = None,
+    include_keys: Annotated[
+        bool, Option("--include-keys", help="Include API keys (not recommended)")
+    ] = False,
+):
+    """
+    Export the entire setup configuration as JSON.
+
+    The exported JSON can be used to replicate this setup on another device.
+    API keys are NOT included by default for security.
+
+    Examples:
+        model-proxy config export
+        model-proxy config export --output my-setup.json
+        model-proxy config export -o setup.json --include-keys
+    """
+    ensure_env_loaded()
+
+    try:
+        from app.cli.config_exporter import export_setup
+
+        export_setup(output=output, include_keys=include_keys)
+    except Exception as e:
+        print_error(f"Export failed: {e}")
+        raise typer.Exit(1)
+
+
+@config_app.command("import")
+def config_import(
+    file: Annotated[str, Argument(help="Path to JSON file to import")],
+    merge: Annotated[
+        bool, Option("--merge", "-m", help="Merge with existing (don't overwrite)")
+    ] = False,
+):
+    """
+    Import a setup configuration from JSON.
+
+    Imports providers and models from an exported setup file.
+    API keys must be added separately after import.
+
+    Examples:
+        model-proxy config import setup.json
+        model-proxy config import setup.json --merge
+    """
+    ensure_env_loaded()
+
+    try:
+        from app.cli.config_exporter import import_setup
+
+        import_setup(input_file=file, merge=merge)
+    except Exception as e:
+        print_error(f"Import failed: {e}")
+        raise typer.Exit(1)
+
+
 @config_app.command("show")
 def config_show(
     model: Annotated[str, Argument(help="Model name to show configuration for")],
@@ -1326,6 +1386,9 @@ def setup(
     Run the interactive setup wizard.
 
     Guides you through provider setup, model configuration, and API key management.
+
+    Note: The web-based GUI is available 24/7 when the server is running.
+    Access it at http://localhost:9876/setup/ (or your configured port).
 
     Examples:
         model-proxy setup
