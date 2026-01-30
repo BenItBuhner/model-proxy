@@ -1,3 +1,4 @@
+
 /**
  * Model-Proxy Configuration Interface - Modern JavaScript
  */
@@ -811,7 +812,31 @@ function renderApiKeys(providerKeys = {}) {
         return;
     }
     
-    elements.apiKeysContainer.innerHTML = enabledProviders.map(provider => {
+    // Check if any keys are configured across all providers
+    const totalKeys = Object.values(providerKeys).reduce((sum, pk) => sum + (pk.key_count || 0), 0);
+    
+    // Show big warning if no keys configured
+    const warningHtml = totalKeys === 0 ? `
+        <div class="alert alert-warning" style="margin-bottom: 24px; padding: 20px; background: var(--warning-50); border-left: 4px solid var(--warning-500); border-radius: var(--radius);">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                <i class="fas fa-exclamation-triangle" style="font-size: 24px; color: var(--warning-500);"></i>
+                <strong style="font-size: 16px;">NO API KEYS CONFIGURED</strong>
+            </div>
+            <p style="margin-bottom: 12px;">
+                This server has <strong>zero API keys</strong> configured. You must:
+            </p>
+            <ol style="margin-left: 20px; margin-bottom: 12px;">
+                <li>Create a <code>.env</code> file in the project root</li>
+                <li>Add your API keys (e.g., <code>OPENAI_API_KEY_1=sk-...</code>)</li>
+                <li>Restart the Model-Proxy server</li>
+            </ol>
+            <p style="font-size: 13px; color: var(--gray-500);">
+                If you just imported a configuration, the .env file was downloaded. Place it in the project root and restart.
+            </p>
+        </div>
+    ` : '';
+    
+    elements.apiKeysContainer.innerHTML = warningHtml + enabledProviders.map(provider => {
         const keyStatus = providerKeys[provider.name] || { has_keys: false, key_count: 0, key_preview: [] };
         const hasKeys = keyStatus.has_keys;
         
@@ -1019,9 +1044,6 @@ async function importConfig() {
             body: state.importData
         });
         
-        // Show success message
-        showToast(result.note, 'success');
-        
         // Download the complete .env file with all API keys
         if (result.env_file) {
             const envBlob = new Blob([result.env_file], { type: 'text/plain' });
@@ -1033,9 +1055,28 @@ async function importConfig() {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(envUrl);
-            
-            showToast('Complete .env file downloaded with all API keys! Place it in your project root and restart the server.', 'info', 15000);
         }
+        
+        // Show critical restart warning
+        const restartMessage = `
+⚠️ IMPORTANT: SERVER RESTART REQUIRED ⚠️
+
+Configuration imported successfully!
+
+✓ ${result.providers_imported} providers imported
+✓ ${result.models_imported} models imported  
+✓ ${result.metadata?.total_api_keys || 'All'} API keys included in .env file
+
+📥 The .env file has been downloaded to your computer.
+
+🔴 TO ACTIVATE THE API KEYS, YOU MUST:
+   1. Place the downloaded .env file in your project root
+   2. Restart the Model-Proxy server
+   3. Then refresh this page
+
+The API keys will NOT work until you restart!`;
+        
+        alert(restartMessage);
         
         await loadAllData();
         
