@@ -956,10 +956,10 @@ function deleteApiKey(providerName, keyIndex) {
 
 // Export/Import
 async function exportConfig() {
-    const includeKeys = elements.exportIncludeKeys.checked;
+    const includeEnv = true; // Always include environment variables
     
     try {
-        const data = await apiCall(`/export?include_env=true`);
+        const data = await apiCall(`/export?include_env=${includeEnv}`);
         elements.exportPreview.textContent = JSON.stringify(data, null, 2);
         elements.exportPreview.classList.remove('hidden');
         
@@ -975,7 +975,8 @@ async function exportConfig() {
         
         showToast('Configuration exported and downloaded', 'success');
     } catch (error) {
-        showToast('Export failed', 'error');
+        console.error('Export error:', error);
+        showToast(`Export failed: ${error.message || 'Unknown error'}`, 'error');
     }
 }
 

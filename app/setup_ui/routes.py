@@ -6,6 +6,7 @@ Provides FastAPI endpoints for the web-based setup wizard and config export/impo
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -338,7 +339,7 @@ async def export_setup(
 
         export_data = {
             "version": "1.0.0",
-            "exported_at": str(Path.cwd()),  # Use a placeholder for timestamp
+            "exported_at": datetime.now().isoformat(),
             "metadata": {
                 "total_providers": len(providers_list),
                 "total_models": len(models_list),
